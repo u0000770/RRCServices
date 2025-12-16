@@ -30,6 +30,13 @@ namespace RRCServices
         // Soft delete + restore (no hard delete for this user)
         Task SoftDeleteAsync(int raceEventId);
         Task RestoreAsync(int raceEventId);
+
+        Task<bool> ExistsAsync(int eventId, DateTime date);
+
+        Task<RaceEventCreateLookupsDTO> GetCreateLookupsAsync(string? distanceCode = null);
+
+       // Task<bool> IsActiveEventAsync(int eventId);
+
     }
 
 }

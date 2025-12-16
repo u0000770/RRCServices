@@ -189,6 +189,75 @@ public class RaceEventService : IRaceEventService
         entity.Active = true;
         await db.SaveChangesAsync();
     }
+
+
+    public async Task<bool> ExistsAsync(int eventId, DateTime date)
+    {
+        using var db = _factory.CreateDbContext();
+
+        // Normalise to date-only semantics
+        var targetDate = date.Date;
+
+        return await db.RaceEvent
+            .AsNoTracking()
+            .AnyAsync(re =>
+                re.EventId == eventId &&
+                // Convert RaceEvent.Date (DateOnly or DateTime) to DateTime safely
+                new DateTime(
+                    re.Date.Year,
+                    re.Date.Month,
+                    re.Date.Day) == targetDate
+            );
+    }
+
+
+    public async Task<RaceEventCreateLookupsDTO> GetCreateLookupsAsync(string? distanceCode = null)
+    {
+        using var db = _factory.CreateDbContext();
+
+        var result = new RaceEventCreateLookupsDTO();
+
+        // --------------------------------------------------
+        // Load ALL distances (usually small + rarely changes)
+        // --------------------------------------------------
+        result.Distances = await db.distance
+            .AsNoTracking()
+            .OrderBy(d => d.Name)
+            .Select(d => new DistanceDTO
+            {
+                EFKey = d.EFKey,
+                Code = d.Code,
+                Name = d.Name,
+                Meters = d.Distance1
+            })
+            .ToListAsync();
+
+        // --------------------------------------------------
+        // Load Events ONLY if a distance is selected
+        // --------------------------------------------------
+        if (!string.IsNullOrWhiteSpace(distanceCode))
+        {
+            result.Events = await db.Events
+                .AsNoTracking()
+                .Where(e =>
+                    e.Active == true &&
+                    e.DistanceCode == distanceCode)
+                .OrderBy(e => e.Title)
+                .Select(e => new EventLookupDTO
+                {
+                    Id = e.EFKey,
+                    Title = e.Title,
+                    Venue = e.Venue,
+                    Discipline = e.Discipline,
+                    DistanceCode = e.DistanceCode,
+                    Active = e.Active
+                })
+                .ToListAsync();
+        }
+
+        return result;
+    }
+
 }
 
 
