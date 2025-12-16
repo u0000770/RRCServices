@@ -15,8 +15,8 @@ namespace RRCServices
         Task<List<RaceEventListItemDTO>> GetRaceEventListAsync(
             bool activeOnly = true,
             string? distanceCode = null,
-            DateOnly? from = null,
-            DateOnly? to = null);
+            DateTime? from = null,
+            DateTime? to = null);
 
         // Details view
         Task<RaceEventDetailsDTO?> GetDetailsAsync(int raceEventId);
@@ -33,3 +33,4 @@ namespace RRCServices
     }
 
 }
+

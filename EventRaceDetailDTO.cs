@@ -11,7 +11,7 @@ namespace RRCServices
         public int RaceEventId { get; set; }
         public int EventId { get; set; }
 
-        public DateOnly Date { get; set; }
+        public DateTime Date { get; set; }
         public bool Active { get; set; }
 
         // Snapshot of the associated Event template (read-only in this view)

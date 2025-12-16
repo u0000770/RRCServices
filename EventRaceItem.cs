@@ -11,7 +11,7 @@ namespace RRCServices
         public int RaceEventId { get; set; }        // RaceEvent.EFKey
         public int EventId { get; set; }            // RaceEvent.EventId
         public string? EventTitle { get; set; }     // Events.Title (joined)
-        public DateOnly Date { get; set; }
+        public DateTime Date { get; set; }
         public bool Active { get; set; }
     }
 

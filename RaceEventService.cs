@@ -46,8 +46,8 @@ public class RaceEventService : IRaceEventService
     public async Task<List<RaceEventListItemDTO>> GetRaceEventListAsync(
         bool activeOnly = true,
         string? distanceCode = null,
-        DateOnly? from = null,
-        DateOnly? to = null)
+        DateTime? from = null,
+        DateTime? to = null)
     {
         using var db = _factory.CreateDbContext();
 
@@ -190,4 +190,6 @@ public class RaceEventService : IRaceEventService
         await db.SaveChangesAsync();
     }
 }
+
+
 

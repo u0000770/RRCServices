@@ -9,6 +9,6 @@ namespace RRCServices
     public sealed class RaceEventUpdateDTO
     {
         public int RaceEventId { get; set; }
-        public DateOnly Date { get; set; }
+        public DateTime Date { get; set; }
     }
 }
