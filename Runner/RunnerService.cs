@@ -112,30 +112,6 @@ namespace RRCServices.Runner
     .ToListAsync(ct);
 
 
-            //var times = await timesQ
-            //    .Include(t => t.Event)
-            //    .OrderByDescending(t => t.Date)
-            //    .Select(t => new EventRaceTimesDto
-            //    {
-            //        EventRunnerTimeId = t.EFKey,
-            //        EventId = t.EventId,
-
-            //        RaceTitle = t.Event.Title,
-            //        RaceDistance = t.Event.DistanceCode,
-
-            //        TargetTime = t.Target ?? 0,
-            //        RaceTargetTime = FormatResult(t.Target ?? 0),
-            //        RaceActualTime = FormatResult(t.Actual ?? 0),
-            //        RaceDate = t.Date,
-
-            //        TimeDifference = FormatDifference(t.Target, t.Actual),
-
-            //        // ✅ Safe + DateOnly-aware
-            //        AgeGrade = GetWavScore((int)t.Target,(bool)runner.gender,runner.dob, t.Event.DistanceCode,t.Date)
-
-
-            //    })
-            //    .ToListAsync(ct);
 
 
             return new RunnerDetailsDto
