@@ -7,7 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace RRCServices
+namespace RRCServices.Calculator
 {
     public class CalculatorService
     {
@@ -140,6 +140,11 @@ namespace RRCServices
 
                 .ToListAsync(ct);
         }
+
+        
+
+
+
     }
 
 
