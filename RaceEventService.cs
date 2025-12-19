@@ -1,16 +1,19 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using RRCDataModel.Data;
 using RRCDataModel.Models;
+using RRCServices.Clock;
 
 namespace RRCServices;
 
 public class RaceEventService : IRaceEventService
 {
     private readonly IDbContextFactory<RRCContext> _factory;
+    private readonly IClock _clock;
 
-    public RaceEventService(IDbContextFactory<RRCContext> factory)
+    public RaceEventService(IDbContextFactory<RRCContext> factory, IClock clock)
     {
         _factory = factory;
+        _clock = clock;
     }
 
     // --------------------------------------------------
@@ -43,11 +46,53 @@ public class RaceEventService : IRaceEventService
     // LIST VIEW
     // Title + Date (joined to Event)
     // --------------------------------------------------
+    //public async Task<List<RaceEventListItemDTO>> GetRaceEventListAsync(
+    //    bool activeOnly = true,
+    //    string? distanceCode = null,
+    //    DateTime? from = null,
+    //    DateTime? to = null)
+    //{
+    //    using var db = _factory.CreateDbContext();
+
+    //    var query =
+    //        from re in db.RaceEvent.AsNoTracking()
+    //        join e in db.Events.AsNoTracking()
+    //            on re.EventId equals e.EFKey
+    //        select new { re, e };
+
+    //    if (activeOnly)
+    //        query = query.Where(x => x.re.Active);
+
+    //    if (!string.IsNullOrWhiteSpace(distanceCode))
+    //        query = query.Where(x => x.e.DistanceCode == distanceCode);
+
+    //    if (from.HasValue)
+    //        query = query.Where(x => x.re.Date >= from.Value);
+
+    //    if (to.HasValue)
+    //        query = query.Where(x => x.re.Date <= to.Value);
+
+    //    return await query
+    //        .OrderBy(x => x.re.Date)
+    //        .Select(x => new RaceEventListItemDTO
+    //        {
+    //            RaceEventId = x.re.EFKey,
+    //            EventId = x.re.EventId,
+    //            EventTitle = x.e.Title,
+    //            Date = x.re.Date,
+    //            Active = x.re.Active,
+    //            DistanceCode = x.e.DistanceCode,
+    //            DistanceMeters = x.d.Distance1
+
+    //        })
+    //        .ToListAsync();
+    //}
+
     public async Task<List<RaceEventListItemDTO>> GetRaceEventListAsync(
-        bool activeOnly = true,
-        string? distanceCode = null,
-        DateTime? from = null,
-        DateTime? to = null)
+    bool activeOnly = true,
+    string? distanceCode = null,
+    DateTime? from = null,
+    DateTime? to = null)
     {
         using var db = _factory.CreateDbContext();
 
@@ -55,7 +100,9 @@ public class RaceEventService : IRaceEventService
             from re in db.RaceEvent.AsNoTracking()
             join e in db.Events.AsNoTracking()
                 on re.EventId equals e.EFKey
-            select new { re, e };
+            join d in db.distance.AsNoTracking()
+                on e.DistanceCode equals d.Code
+            select new { re, e, d };
 
         if (activeOnly)
             query = query.Where(x => x.re.Active);
@@ -77,10 +124,15 @@ public class RaceEventService : IRaceEventService
                 EventId = x.re.EventId,
                 EventTitle = x.e.Title,
                 Date = x.re.Date,
-                Active = x.re.Active
+                Active = x.re.Active,
+
+                // ✅ THIS IS THE FIX
+                DistanceMeters = x.d.Distance1
             })
             .ToListAsync();
     }
+
+
 
     // --------------------------------------------------
     // DETAILS VIEW

@@ -15,13 +15,18 @@ namespace RRCServices.Runner
         public string RaceTitle { get; init; } = "";     // e.g. from Events
 
         public int TargetTime { get; init; }             // seconds
+        public int? ActualSeconds { get; init; }
         public string RaceTargetTime { get; init; } = "No Result";
         public string RaceActualTime { get; init; } = "No Result";
+        public double? DistanceMeters { get; init; }
 
         public DateTime? RaceDate { get; init; }
         public string TimeDifference { get; init; } = "";
 
         public decimal AgeGrade { get; init; }           // hook into your AgeGrade logic
+
+
+
     }
 
 }

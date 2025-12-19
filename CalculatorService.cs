@@ -147,6 +147,6 @@ namespace RRCServices
     {
         public int RunnerId { get; set; }
         public int Actual { get; set; }      // seconds
-        public double Distance { get; set; } // km
+        public double Distance { get; set; } // meters
     }
 }

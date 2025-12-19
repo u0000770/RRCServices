@@ -13,6 +13,8 @@ namespace RRCServices
         public string? EventTitle { get; set; }     // Events.Title (joined)
         public DateTime Date { get; set; }
         public bool Active { get; set; }
+        public double DistanceMeters { get; set; }
+        public string? DistanceCode { get; set; }   // "5km", "10km"
     }
 
 }

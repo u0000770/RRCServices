@@ -83,6 +83,43 @@ namespace RRCServices
                 .SingleOrDefaultAsync();
         }
 
+
+        // ----------------------------
+        // READ: distance in meters by code
+        // ----------------------------
+        public async Task<double?> GetMetersByCodeAsync(string code)
+        {
+            using var db = _factory.CreateDbContext();
+
+            return await db.distance
+                .AsNoTracking()
+                .Where(d => d.Code == code)
+                .Select(d => (double?)d.Distance1)
+                .SingleOrDefaultAsync();
+        }
+
+
+
+        //// ----------------------------
+        //// READ: by code (returns DTO)
+        //// ----------------------------
+        //public async Task<double> GetByCodeAsync(string code)
+        //{
+        //    using var db = _factory.CreateDbContext();
+
+        //    return await db.distance
+        //        .AsNoTracking()
+        //        .Where(d => d.Code == code)
+        //        .Select(d => new DistanceDTO
+        //        {
+        //            EFKey = d.EFKey,
+        //            Code = d.Code,
+        //            Name = d.Name,
+        //            Meters = d.Distance1
+        //        })
+        //        .SingleOrDefaultAsync();
+        //}
+
         // ----------------------------
         // CREATE (accepts DTO, returns new key)
         // ----------------------------

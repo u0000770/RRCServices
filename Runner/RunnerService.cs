@@ -81,35 +81,71 @@ namespace RRCServices.Runner
             if (!includeInactiveTimes)
                 timesQ = timesQ.Where(t => t.Active != false);
 
-            var times = await timesQ
-    .Include(t => t.Event)
-    .OrderByDescending(t => t.Date)
-   .Select(t => new EventRaceTimesDto
-   {
-       EventRunnerTimeId = t.EFKey,
-       EventId = t.EventId,
+            //  var times = await timesQ
+            // .Include(t => t.Event)
+            // .OrderByDescending(t => t.Date)
+            //.Select(t => new EventRaceTimesDto
+            //{
+            //    EventRunnerTimeId = t.EFKey,
+            //    EventId = t.EventId,
 
-       RaceTitle = t.Event.Title,
-       RaceDistance = t.Event.DistanceCode,
+            //    RaceTitle = t.Event.Title,
+            //    RaceDistance = t.Event.DistanceCode,
 
-       TargetTime = t.Target ?? 0,
-       RaceTargetTime = FormatResult(t.Target ?? 0),
-       RaceActualTime = FormatResult(t.Actual ?? 0),
-       RaceDate = t.Date,
+            //    TargetTime = t.Target ?? 0,
+            //    RaceTargetTime = FormatResult(t.Target ?? 0),
+            //    RaceActualTime = FormatResult(t.Actual ?? 0),
+            //    RaceDate = t.Date,
+            //    ActualSeconds = t.Actual,
 
-       TimeDifference = FormatDifference(t.Target, t.Actual),
+            //    TimeDifference = FormatDifference(t.Target, t.Actual),
 
-       // Only calculate when we have an Actual time AND required inputs
-       AgeGrade =
-        (t.Actual.HasValue && t.Actual.Value > 0
-         && runner.gender.HasValue
-         && runner.dob.HasValue
-         && t.Date.HasValue)
-        ? GetWavScore(t.Actual.Value, runner.gender.Value, runner.dob, t.Event.DistanceCode, t.Date)
-        : 0
-   })
+            //    // Only calculate when we have an Actual time AND required inputs
+            //    AgeGrade =
+            //     (t.Actual.HasValue && t.Actual.Value > 0
+            //      && runner.gender.HasValue
+            //      && runner.dob.HasValue
+            //      && t.Date.HasValue)
+            //     ? GetWavScore(t.Actual.Value, runner.gender.Value, runner.dob, t.Event.DistanceCode, t.Date)
+            //     : 0
+            //})
 
-    .ToListAsync(ct);
+            // .ToListAsync(ct);
+
+    var times = await (
+    from t in timesQ
+    join e in _db.Events.AsNoTracking() on t.EventId equals e.EFKey
+    join d in _db.distance.AsNoTracking() on e.DistanceCode equals d.Code into dd
+    from d in dd.DefaultIfEmpty()
+    orderby t.Date descending
+    select new EventRaceTimesDto
+    {
+        EventRunnerTimeId = t.EFKey,
+        EventId = t.EventId,
+
+        RaceTitle = e.Title,
+        RaceDistance = e.DistanceCode,
+
+        // ✅ NEW
+        DistanceMeters = d != null ? (double?)d.Distance1 : null,
+        ActualSeconds = t.Actual ?? 0,
+        TargetTime = t.Target ?? 0,
+        RaceTargetTime = FormatResult(t.Target ?? 0),
+        RaceActualTime = FormatResult(t.Actual ?? 0),
+        RaceDate = t.Date,
+
+        TimeDifference = FormatDifference(t.Target, t.Actual),
+
+        AgeGrade =
+            (t.Actual.HasValue && t.Actual.Value > 0
+             && runner.gender.HasValue
+             && runner.dob.HasValue
+             && t.Date.HasValue)
+            ? GetWavScore(t.Actual.Value, runner.gender.Value, runner.dob, e.DistanceCode, t.Date)
+            : 0
+    }
+).ToListAsync(ct);
+
 
 
 
