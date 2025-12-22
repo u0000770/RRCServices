@@ -21,6 +21,54 @@ namespace RRCServices.Runner
             _db = db;
         }
 
+        public async Task<int?> FindRunnerIdAsync(
+    string? ukan,
+    string? firstName,
+    string? secondName,
+    DateTime? dob,
+    CancellationToken ct = default)
+        {
+            var q = _db.runners.AsNoTracking().AsQueryable();
+
+            // --- 1️⃣ UKAN lookup (highest confidence) ---
+            if (!string.IsNullOrWhiteSpace(ukan))
+            {
+                var normalizedUkan = ukan.Trim();
+
+                return await q
+                    .Where(r =>
+                        r.Active == true &&
+                        r.ukan != null &&
+                        r.ukan == normalizedUkan)
+                    .Select(r => (int?)r.EFKey)
+                    .SingleOrDefaultAsync(ct);
+            }
+
+            // --- 2️⃣ Name + DOB lookup ---
+            if (!string.IsNullOrWhiteSpace(firstName)
+                && !string.IsNullOrWhiteSpace(secondName)
+                && dob.HasValue)
+            {
+                var fn = firstName.Trim();
+                var sn = secondName.Trim();
+                var dobDate = dob.Value.Date;
+
+                return await q
+                    .Where(r =>
+                        r.Active == true &&
+                        r.firstname == fn &&
+                        r.secondname == sn &&
+                        r.dob.HasValue &&
+                        r.dob.Value == DateOnly.FromDateTime(dobDate))
+                    .Select(r => (int?)r.EFKey)
+                    .SingleOrDefaultAsync(ct);
+            }
+
+            // --- 3️⃣ Nothing usable supplied ---
+            return null;
+        }
+
+
         public async Task<IReadOnlyList<RunnerListItemDto>> GetRunnersAsync(
             string? search, bool includeInactive = false, CancellationToken ct = default)
         {
@@ -58,7 +106,7 @@ namespace RRCServices.Runner
             var runner = await _db.runners
                   .AsNoTracking()
                   .Where(r => r.EFKey == runnerId)
-                  .Select(r => new
+                  .Select(r => new 
                   {
                       r.EFKey,
                       r.firstname,
@@ -68,7 +116,9 @@ namespace RRCServices.Runner
                       r.email,
                       r.Active,
                       r.ageGradeCode,
-                      r.gender        // bool?
+                      r.gender
+
+                      // bool?
                   })
                   .SingleOrDefaultAsync(ct);
 
@@ -81,36 +131,7 @@ namespace RRCServices.Runner
             if (!includeInactiveTimes)
                 timesQ = timesQ.Where(t => t.Active != false);
 
-            //  var times = await timesQ
-            // .Include(t => t.Event)
-            // .OrderByDescending(t => t.Date)
-            //.Select(t => new EventRaceTimesDto
-            //{
-            //    EventRunnerTimeId = t.EFKey,
-            //    EventId = t.EventId,
 
-            //    RaceTitle = t.Event.Title,
-            //    RaceDistance = t.Event.DistanceCode,
-
-            //    TargetTime = t.Target ?? 0,
-            //    RaceTargetTime = FormatResult(t.Target ?? 0),
-            //    RaceActualTime = FormatResult(t.Actual ?? 0),
-            //    RaceDate = t.Date,
-            //    ActualSeconds = t.Actual,
-
-            //    TimeDifference = FormatDifference(t.Target, t.Actual),
-
-            //    // Only calculate when we have an Actual time AND required inputs
-            //    AgeGrade =
-            //     (t.Actual.HasValue && t.Actual.Value > 0
-            //      && runner.gender.HasValue
-            //      && runner.dob.HasValue
-            //      && t.Date.HasValue)
-            //     ? GetWavScore(t.Actual.Value, runner.gender.Value, runner.dob, t.Event.DistanceCode, t.Date)
-            //     : 0
-            //})
-
-            // .ToListAsync(ct);
 
     var times = await (
     from t in timesQ
@@ -161,7 +182,9 @@ namespace RRCServices.Runner
                 Active = runner.Active,
                 AgeGradeCode = runner.ageGradeCode,
                 Gender = ToGenderString(runner.gender),
+                IsMale = (bool)runner.gender,
                 EventTimes = times
+                
             };
         }
 

@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace RRCServices.Runner
 {
-    public sealed class RunnerDetailsDto
+    public  class RunnerDetailsDto
     {
         public int Id { get; init; }
         public string Firstname { get; init; } = null!;
@@ -18,6 +18,7 @@ namespace RRCServices.Runner
         public bool? Active { get; init; }
         public string? AgeGradeCode { get; init; }
         public string Gender { get; init; } = "Unknown";
+        public bool IsMale { get; init; }
 
         public IReadOnlyList<EventRaceTimesDto> EventTimes { get; init; } = Array.Empty<EventRaceTimesDto>();
     }

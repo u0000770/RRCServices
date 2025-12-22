@@ -8,7 +8,7 @@ namespace RRCServices.AgeGrade
 {
     public class AgeGrade
     {
-
+        // AgeGrade.GetWavScore(t.ActualSeconds!.Value,_runner.Gender, _runner.Dob, DistanceService.GetCodeByMetersAsync(race.distance), t.RaceDate).ToString("0.00")
         public static int GetWavScore(int time, bool gender, DateTime? dob, string RaceCode, DateTime? RaceDate)
         {
             WAVAGrade model = new WAVAGrade();

@@ -42,51 +42,7 @@ public class RaceEventService : IRaceEventService
             .ToListAsync();
     }
 
-    // --------------------------------------------------
-    // LIST VIEW
-    // Title + Date (joined to Event)
-    // --------------------------------------------------
-    //public async Task<List<RaceEventListItemDTO>> GetRaceEventListAsync(
-    //    bool activeOnly = true,
-    //    string? distanceCode = null,
-    //    DateTime? from = null,
-    //    DateTime? to = null)
-    //{
-    //    using var db = _factory.CreateDbContext();
 
-    //    var query =
-    //        from re in db.RaceEvent.AsNoTracking()
-    //        join e in db.Events.AsNoTracking()
-    //            on re.EventId equals e.EFKey
-    //        select new { re, e };
-
-    //    if (activeOnly)
-    //        query = query.Where(x => x.re.Active);
-
-    //    if (!string.IsNullOrWhiteSpace(distanceCode))
-    //        query = query.Where(x => x.e.DistanceCode == distanceCode);
-
-    //    if (from.HasValue)
-    //        query = query.Where(x => x.re.Date >= from.Value);
-
-    //    if (to.HasValue)
-    //        query = query.Where(x => x.re.Date <= to.Value);
-
-    //    return await query
-    //        .OrderBy(x => x.re.Date)
-    //        .Select(x => new RaceEventListItemDTO
-    //        {
-    //            RaceEventId = x.re.EFKey,
-    //            EventId = x.re.EventId,
-    //            EventTitle = x.e.Title,
-    //            Date = x.re.Date,
-    //            Active = x.re.Active,
-    //            DistanceCode = x.e.DistanceCode,
-    //            DistanceMeters = x.d.Distance1
-
-    //        })
-    //        .ToListAsync();
-    //}
 
     public async Task<List<RaceEventListItemDTO>> GetRaceEventListAsync(
     bool activeOnly = true,
@@ -242,25 +198,17 @@ public class RaceEventService : IRaceEventService
         await db.SaveChangesAsync();
     }
 
-
     public async Task<bool> ExistsAsync(int eventId, DateTime date)
     {
         using var db = _factory.CreateDbContext();
 
-        // Normalise to date-only semantics
         var targetDate = date.Date;
 
         return await db.RaceEvent
             .AsNoTracking()
-            .AnyAsync(re =>
-                re.EventId == eventId &&
-                // Convert RaceEvent.Date (DateOnly or DateTime) to DateTime safely
-                new DateTime(
-                    re.Date.Year,
-                    re.Date.Month,
-                    re.Date.Day) == targetDate
-            );
+            .AnyAsync(re => re.EventId == eventId && re.Date.Date == targetDate);
     }
+
 
 
     public async Task<RaceEventCreateLookupsDTO> GetCreateLookupsAsync(string? distanceCode = null)

@@ -83,6 +83,27 @@ namespace RRCServices
                 .SingleOrDefaultAsync();
         }
 
+        // ----------------------------
+        // READ: distance code by meters (tolerance-based)
+        // ----------------------------
+        public async Task<string?> GetCodeByMetersAsync(double meters)
+        {
+            if (meters <= 0)
+                return null;
+
+            using var db = _factory.CreateDbContext();
+
+            // tolerance allows for rounding / storage differences
+            const double tolerance = 5.0; // meters
+
+            return await db.distance
+                .AsNoTracking()
+                .Where(d => Math.Abs(d.Distance1 - meters) <= tolerance)
+                .OrderBy(d => Math.Abs(d.Distance1 - meters)) // closest match wins
+                .Select(d => d.Code)
+                .FirstOrDefaultAsync();
+        }
+
 
         // ----------------------------
         // READ: distance in meters by code
