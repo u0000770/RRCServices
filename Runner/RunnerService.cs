@@ -22,51 +22,66 @@ namespace RRCServices.Runner
         }
 
         public async Task<int?> FindRunnerIdAsync(
-    string? ukan,
-    string? firstName,
-    string? secondName,
-    DateTime? dob,
-    CancellationToken ct = default)
+         string? ukan,
+         string? firstName,
+         string? secondName,
+         DateTime? dob,
+         CancellationToken ct = default)
         {
-            var q = _db.runners.AsNoTracking().AsQueryable();
+            var q = _db.runners
+                .AsNoTracking()
+                .Where(r => r.Active == true);
 
-            // --- 1️⃣ UKAN lookup (highest confidence) ---
+            // Helper local function: normalize for comparison
+            static string NormalizeName(string s)
+            {
+                // Trim and collapse multiple spaces, then uppercase
+                var trimmed = s.Trim();
+                var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                return string.Join(" ", parts).ToUpperInvariant();
+            }
+
+            // 1) UKAN lookup (still best)
             if (!string.IsNullOrWhiteSpace(ukan))
             {
                 var normalizedUkan = ukan.Trim();
 
                 return await q
-                    .Where(r =>
-                        r.Active == true &&
-                        r.ukan != null &&
-                        r.ukan == normalizedUkan)
+                    .Where(r => r.ukan != null && r.ukan.Trim() == normalizedUkan)
                     .Select(r => (int?)r.EFKey)
-                    .SingleOrDefaultAsync(ct);
+                    .FirstOrDefaultAsync(ct);
             }
 
-            // --- 2️⃣ Name + DOB lookup ---
+            // 2) Name + DOB lookup (robust)
             if (!string.IsNullOrWhiteSpace(firstName)
                 && !string.IsNullOrWhiteSpace(secondName)
                 && dob.HasValue)
             {
-                var fn = firstName.Trim();
-                var sn = secondName.Trim();
+                var fn = NormalizeName(firstName);
+                var sn = NormalizeName(secondName);
                 var dobDate = dob.Value.Date;
 
+                // Compare DOB as DateTime.Date (SQL date) to avoid DateOnly translation quirks
+                // If your column is DateOnly? in EF, it still usually translates fine,
+                // but this is a safer cross-environment pattern if you have a DateTime-compatible projection.
                 return await q
                     .Where(r =>
-                        r.Active == true &&
-                        r.firstname == fn &&
-                        r.secondname == sn &&
+                        r.firstname != null &&
+                        r.secondname != null &&
                         r.dob.HasValue &&
-                        r.dob.Value == DateOnly.FromDateTime(dobDate))
+                        // normalize db fields in SQL
+                        r.firstname.Trim().ToUpper() == fn &&
+                        r.secondname.Trim().ToUpper() == sn &&
+                        // DateOnly compare, but ensure you're comparing DATE-only values
+                        r.dob.Value == DateOnly.FromDateTime(dobDate)
+                    )
                     .Select(r => (int?)r.EFKey)
-                    .SingleOrDefaultAsync(ct);
+                    .FirstOrDefaultAsync(ct);
             }
 
-            // --- 3️⃣ Nothing usable supplied ---
             return null;
         }
+
 
 
         public async Task<IReadOnlyList<RunnerListItemDto>> GetRunnersAsync(

@@ -5,20 +5,22 @@
 /// </summary>
 public sealed class RaceResultRowDTO
 {
-    public int RunnerId { get; set; }
-    public string RunnerName { get; set; } = "";
+    public int RunnerId { get; init; }
+    public int EventRunnerTimeId { get; init; }
 
-    // Display strings as per your example: 01h:46m:43s
-    public string PredictedTime { get; set; } = "";
-    public string ActualTime { get; set; } = "";
+    public string RunnerName { get; init; } = "";
+    public string? Ukan { get; init; }
 
-    // Difference in seconds (Target - Actual). Positive = better than target.
-    public int TimeDifferenceSeconds { get; set; }
+    public int TargetSeconds { get; init; }        // predicted/target seconds (read-only)
+    public int? ActualSeconds { get; init; }       // actual seconds (editable)
 
-    // Trophy time is capped at 120 when positive; null when not positive (legacy behaviour)
-    public int? TrophyTimeSeconds { get; set; }
+    // optional display strings if you already provide them
+    public string PredictedTime { get; init; } = "";
+    public string ActualTime { get; init; } = "";
 
-    public int TrophyPoints { get; set; }
+    public int TimeDifferenceSeconds { get; init; }
+    public int? TrophyTimeSeconds { get; init; }
+    public int TrophyPoints { get; init; }
 }
 
 /// <summary>
