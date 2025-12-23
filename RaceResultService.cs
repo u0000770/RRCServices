@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using RRCDataModel.Data;
+using RRCDataModel.Models;
 
 namespace RRCServices;
 
@@ -60,6 +61,7 @@ public sealed class RaceResultService : IRaceResultService
                && ert.Date == header.Date
             select new
             {
+                EventRunnerTimeId = ert.EFKey,
                 RunnerId = ert.RunnerId,
                 First = r.firstname,
                 Last = r.secondname,
@@ -94,8 +96,10 @@ public sealed class RaceResultService : IRaceResultService
             header.Results.Add(new RaceResultRowDTO
             {
                 RunnerId = x.RunnerId,
+                ///// needs a value
+                EventRunnerTimeId= x.EventRunnerTimeId,
                 RunnerName = $"{x.First} {x.Last}".Trim(),
-
+                
                 PredictedTime = _time.FormatSeconds(predicted),
                 ActualTime = _time.FormatSeconds(actual),
 

@@ -291,6 +291,32 @@ namespace RRCServices.Runner
             return entity.EFKey;
         }
 
+
+        public async Task<bool> UpdateEventRunnerActualAsync(int runnerId, int eventRunnerTimeId, EventRunnerTimeUpsertDto dto, CancellationToken ct = default)
+        {
+            var entity = await _db.EventRunnerTimes
+                .SingleOrDefaultAsync(t => t.EFKey == eventRunnerTimeId && t.RunnerId == runnerId, ct);
+
+            if (entity is null) return false;
+
+            // optionally validate event exists if changing it
+            if (entity.EventId != dto.EventId)
+            {
+                var eventExists = await _db.Events.AnyAsync(e => e.EFKey == dto.EventId, ct);
+                if (!eventExists) throw new InvalidOperationException("Event not found.");
+                entity.EventId = dto.EventId;
+            }
+
+            entity.RaceEventId = entity.RaceEventId;
+            entity.Target = entity.Target;
+            entity.Actual = dto.ActualSeconds;
+            entity.Date = entity.Date;
+            entity.Active = entity.Active;
+
+            await _db.SaveChangesAsync(ct);
+            return true;
+        }
+
         public async Task<bool> UpdateEventRunnerTimeAsync(int runnerId, int eventRunnerTimeId, EventRunnerTimeUpsertDto dto, CancellationToken ct = default)
         {
             var entity = await _db.EventRunnerTimes

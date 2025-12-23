@@ -22,6 +22,11 @@ namespace RRCServices.Runner
         Task<bool> UpdateEventRunnerTimeAsync(int runnerId, int eventRunnerTimeId, EventRunnerTimeUpsertDto dto, CancellationToken ct = default);
         Task<bool> SetEventRunnerTimeActiveAsync(int runnerId, int eventRunnerTimeId, bool active, CancellationToken ct = default);
 
+        Task<bool> UpdateEventRunnerActualAsync(int runnerId, int eventRunnerTimeId, EventRunnerTimeUpsertDto dto, CancellationToken ct = default);
+
+
+
+
         Task<int?> FindRunnerIdAsync(
     string? ukan,
     string? firstName,
