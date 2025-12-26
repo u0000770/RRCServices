@@ -15,6 +15,7 @@ namespace RRCServices
         public bool Active { get; set; }
         public double DistanceMeters { get; set; }
         public string? DistanceCode { get; set; }   // "5km", "10km"
+        public string ? Location { get; set; }
     }
 
 }

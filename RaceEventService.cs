@@ -81,7 +81,8 @@ public class RaceEventService : IRaceEventService
                 EventTitle = x.e.Title,
                 Date = x.re.Date,
                 Active = x.re.Active,
-
+                 DistanceCode = x.e.DistanceCode,
+                 Location = x.e.Venue,
                 // ✅ THIS IS THE FIX
                 DistanceMeters = x.d.Distance1
             })
