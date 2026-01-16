@@ -142,21 +142,76 @@ namespace RRCServices.Calculator
         }
 
 
-        public async Task<List<RecentRaceDto>> GetLastRacesSinceAsync(
-        RRCContext db,
-        int runnerId,
-        DateTime seasonStart,
-        int maxRaces = 3,
-        CancellationToken ct = default)
+    //    public async Task<List<RecentRaceDto>> GetLastRacesSince_NoDistanceAsync(
+    //RRCContext db,
+    //int runnerId,
+    //DateTime seasonStart,
+    //int maxRaces = 3,
+    //CancellationToken ct = default)
+    //    {
+    //        return await db.EventRunnerTimes
+    //            .AsNoTracking()
+    //            .Where(t =>
+    //                t.RunnerId == runnerId &&
+    //                t.Active != false &&
+    //                t.Actual.HasValue && t.Actual.Value > 0 &&
+    //                t.Date.HasValue && t.Date.Value >= seasonStart &&
+    //                t.Event.Active != false
+    //            )
+    //            .OrderByDescending(t => t.Date)
+    //            .Take(maxRaces)
+    //            .Select(t => new RecentRaceDto
+    //            {
+    //                RunnerId = t.RunnerId,
+    //                Actual = t.Actual!.Value,
+
+    //                // Dummy value so DTO still populates
+    //                Distance = 0
+    //            })
+    //            .ToListAsync(ct);
+    //    }
+
+        public async Task<List<RecentRaceDto>> GetLastRacesSince_NoDistanceAsync(
+   RRCContext db,
+   int runnerId,
+   DateTime seasonStart,
+   int maxRaces = 3,
+   CancellationToken ct = default)
         {
             return await db.EventRunnerTimes
                 .AsNoTracking()
                 .Where(t =>
                     t.RunnerId == runnerId &&
-                    t.Active != false &&
+                    t.Actual.HasValue && t.Actual.Value > 0 &&
+                    t.Date.HasValue && t.Date.Value >= seasonStart
+                )
+                .OrderByDescending(t => t.Date)
+                .Take(maxRaces)
+                .Select(t => new RecentRaceDto
+                {
+                    RunnerId = t.RunnerId,
+                    Actual = t.Actual!.Value,
+
+                    // Dummy value so DTO still populates
+                    Distance = 0
+                })
+                .ToListAsync(ct);
+        }
+
+
+        public async Task<List<RecentRaceDto>> GetLastRacesSinceAsync(
+      RRCContext db,
+      int runnerId,
+      DateTime seasonStart,
+      int maxRaces = 3,
+      CancellationToken ct = default)
+        {
+            return await db.EventRunnerTimes
+                .AsNoTracking()
+                .Where(t =>
+                    t.RunnerId == runnerId &&
                     t.Actual.HasValue && t.Actual.Value > 0 &&
                     t.Date.HasValue && t.Date.Value >= seasonStart &&
-                    t.Event.Active != false &&
                     t.Event.DistanceCode != "1m"
                 )
                 .OrderByDescending(t => t.Date)
@@ -180,6 +235,46 @@ namespace RRCServices.Calculator
                 })
                 .ToListAsync(ct);
         }
+
+
+        //public async Task<List<RecentRaceDto>> GetLastRacesSinceAsync(
+        //RRCContext db,
+        //int runnerId,
+        //DateTime seasonStart,
+        //int maxRaces = 3,
+        //CancellationToken ct = default)
+        //{
+        //    return await db.EventRunnerTimes
+        //        .AsNoTracking()
+        //        .Where(t =>
+        //            t.RunnerId == runnerId &&
+        //            t.Active != false &&
+        //            t.Actual.HasValue && t.Actual.Value > 0 &&
+        //            t.Date.HasValue && t.Date.Value >= seasonStart &&
+        //            t.Event.Active != false &&
+        //            t.Event.DistanceCode != "1m"
+        //        )
+        //        .OrderByDescending(t => t.Date)
+        //        .Select(t => new
+        //        {
+        //            t.RunnerId,
+        //            ActualSeconds = t.Actual!.Value,
+
+        //            DistanceMeters = db.distance
+        //                .Where(d => d.Code == t.Event.DistanceCode)
+        //                .Select(d => d.Distance1)
+        //                .FirstOrDefault()
+        //        })
+        //        .Where(x => x.DistanceMeters > 0)
+        //        .Take(maxRaces)
+        //        .Select(x => new RecentRaceDto
+        //        {
+        //            RunnerId = x.RunnerId,
+        //            Actual = x.ActualSeconds,
+        //            Distance = x.DistanceMeters
+        //        })
+        //        .ToListAsync(ct);
+        //}
 
 
         public async Task<List<RecentRaceDto>> GetLastRacesSinceAsync(

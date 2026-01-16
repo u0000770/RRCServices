@@ -257,9 +257,11 @@ namespace RRCServices.Calculator
                 var season = await _seasonSettings.GetAsync(ct);
 
                 // DateOnly -> DateTime (inclusive start)
-                var seasonStart = season.SeasonStartDate.ToDateTime(TimeOnly.MinValue);
+          //      var seasonStart = season.SeasonStartDate.ToDateTime(TimeOnly.MinValue);
+                 var seasonStart =  new DateTime(2025, 11, 30);
                 // Optional: inclusive end
-                var seasonEnd = season.SeasonEndDate.ToDateTime(TimeOnly.MaxValue);
+                //var seasonEnd = season.SeasonEndDate.ToDateTime(TimeOnly.MaxValue);
+                var seasonEnd =  new DateTime(2026, 11, 30);
 
                 await using var db = await _factory.CreateDbContextAsync(ct);
 

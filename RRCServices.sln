@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36623.8 d17.14
+VisualStudioVersion = 17.14.36623.8
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RRCServices", "RRCServices.csproj", "{12EF8556-6F44-A5CB-A155-311404737513}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RRCApp", "..\RRCApp\RRCApp.csproj", "{8D8072EE-01E0-5A34-3821-82B8120F6031}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{12EF8556-6F44-A5CB-A155-311404737513}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{12EF8556-6F44-A5CB-A155-311404737513}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{12EF8556-6F44-A5CB-A155-311404737513}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8D8072EE-01E0-5A34-3821-82B8120F6031}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8D8072EE-01E0-5A34-3821-82B8120F6031}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8D8072EE-01E0-5A34-3821-82B8120F6031}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8D8072EE-01E0-5A34-3821-82B8120F6031}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
