@@ -8,6 +8,11 @@ namespace RRCServices
 {
     public interface IRaceEventService
     {
+        Task<List<RaceEventListItemDTO>> GetRaceEventListWithActualsAsync(
+    DateTime cutoff,
+    bool activeOnly = true,
+    string? distanceCode = null);
+
         // Event lookup for creation (filtered by distance code)
         Task<List<EventLookupDTO>> GetActiveEventsByDistanceAsync(string distanceCode);
 

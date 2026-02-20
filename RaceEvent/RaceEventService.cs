@@ -72,7 +72,7 @@ public class RaceEventService : IRaceEventService
         if (to.HasValue)
             query = query.Where(x => x.re.Date <= to.Value);
 
-        return await query
+        var result = await query
             .OrderBy(x => x.re.Date)
             .Select(x => new RaceEventListItemDTO
             {
@@ -81,12 +81,13 @@ public class RaceEventService : IRaceEventService
                 EventTitle = x.e.Title,
                 Date = x.re.Date,
                 Active = x.re.Active,
-                 DistanceCode = x.e.DistanceCode,
-                 Location = x.e.Venue,
+                DistanceCode = x.e.DistanceCode,
+                Location = x.e.Venue,
                 // ✅ THIS IS THE FIX
                 DistanceMeters = x.d.Distance1
             })
             .ToListAsync();
+        return result;
     }
 
 
@@ -208,6 +209,54 @@ public class RaceEventService : IRaceEventService
         return await db.RaceEvent
             .AsNoTracking()
             .AnyAsync(re => re.EventId == eventId && re.Date.Date == targetDate);
+    }
+
+
+    public async Task<List<RaceEventListItemDTO>> GetRaceEventListWithActualsAsync(
+    DateTime cutoff,
+    bool activeOnly = true,
+    string? distanceCode = null)
+    {
+        using var db = _factory.CreateDbContext();
+
+        var query =
+            from re in db.RaceEvent.AsNoTracking()
+            join e in db.Events.AsNoTracking()
+                on re.EventId equals e.EFKey
+            join d in db.distance.AsNoTracking()
+                on e.DistanceCode equals d.Code
+            where re.Date > cutoff
+            select new { re, e, d };
+
+        if (activeOnly)
+            query = query.Where(x => x.re.Active);
+
+        if (!string.IsNullOrWhiteSpace(distanceCode))
+            query = query.Where(x => x.e.DistanceCode == distanceCode);
+
+        // ✅ Only include race events that have at least one ACTUAL result
+        query = query.Where(x =>
+            db.EventRunnerTimes.AsNoTracking().Any(t =>
+                t.RaceEventId == x.re.EFKey
+                && t.Actual.HasValue
+                && t.Actual.Value > 0
+            )
+        );
+
+        return await query
+            .OrderBy(x => x.re.Date)
+            .Select(x => new RaceEventListItemDTO
+            {
+                RaceEventId = x.re.EFKey,
+                EventId = x.re.EventId,
+                EventTitle = x.e.Title,
+                Date = x.re.Date,
+                Active = x.re.Active,
+                DistanceCode = x.e.DistanceCode,
+                Location = x.e.Venue,
+                DistanceMeters = x.d.Distance1
+            })
+            .ToListAsync();
     }
 
 
