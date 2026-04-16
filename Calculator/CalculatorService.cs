@@ -1,6 +1,7 @@
-﻿using Calculator;
+﻿using XCalculator;
 using Microsoft.EntityFrameworkCore;
 using RRCDataModel.Data;
+using RRCServices.Runner;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -71,7 +72,7 @@ namespace RRCServices.Calculator
 
 
         // ---------------------------------------------
-        // Prediction logic 
+        // Prediction logic
         // ---------------------------------------------
         public static double CalculatePredicion(
             double nextDistance,
@@ -142,34 +143,6 @@ namespace RRCServices.Calculator
         }
 
 
-    //    public async Task<List<RecentRaceDto>> GetLastRacesSince_NoDistanceAsync(
-    //RRCContext db,
-    //int runnerId,
-    //DateTime seasonStart,
-    //int maxRaces = 3,
-    //CancellationToken ct = default)
-    //    {
-    //        return await db.EventRunnerTimes
-    //            .AsNoTracking()
-    //            .Where(t =>
-    //                t.RunnerId == runnerId &&
-    //                t.Active != false &&
-    //                t.Actual.HasValue && t.Actual.Value > 0 &&
-    //                t.Date.HasValue && t.Date.Value >= seasonStart &&
-    //                t.Event.Active != false
-    //            )
-    //            .OrderByDescending(t => t.Date)
-    //            .Take(maxRaces)
-    //            .Select(t => new RecentRaceDto
-    //            {
-    //                RunnerId = t.RunnerId,
-    //                Actual = t.Actual!.Value,
-
-    //                // Dummy value so DTO still populates
-    //                Distance = 0
-    //            })
-    //            .ToListAsync(ct);
-    //    }
 
         public async Task<List<RecentRaceDto>> GetLastRacesSince_NoDistanceAsync(
    RRCContext db,
@@ -237,45 +210,6 @@ namespace RRCServices.Calculator
         }
 
 
-        //public async Task<List<RecentRaceDto>> GetLastRacesSinceAsync(
-        //RRCContext db,
-        //int runnerId,
-        //DateTime seasonStart,
-        //int maxRaces = 3,
-        //CancellationToken ct = default)
-        //{
-        //    return await db.EventRunnerTimes
-        //        .AsNoTracking()
-        //        .Where(t =>
-        //            t.RunnerId == runnerId &&
-        //            t.Active != false &&
-        //            t.Actual.HasValue && t.Actual.Value > 0 &&
-        //            t.Date.HasValue && t.Date.Value >= seasonStart &&
-        //            t.Event.Active != false &&
-        //            t.Event.DistanceCode != "1m"
-        //        )
-        //        .OrderByDescending(t => t.Date)
-        //        .Select(t => new
-        //        {
-        //            t.RunnerId,
-        //            ActualSeconds = t.Actual!.Value,
-
-        //            DistanceMeters = db.distance
-        //                .Where(d => d.Code == t.Event.DistanceCode)
-        //                .Select(d => d.Distance1)
-        //                .FirstOrDefault()
-        //        })
-        //        .Where(x => x.DistanceMeters > 0)
-        //        .Take(maxRaces)
-        //        .Select(x => new RecentRaceDto
-        //        {
-        //            RunnerId = x.RunnerId,
-        //            Actual = x.ActualSeconds,
-        //            Distance = x.DistanceMeters
-        //        })
-        //        .ToListAsync(ct);
-        //}
-
 
         public async Task<List<RecentRaceDto>> GetLastRacesSinceAsync(
     int runnerId,
@@ -314,6 +248,115 @@ namespace RRCServices.Calculator
                     Distance = x.DistanceMeters
                 })
                 .ToListAsync(ct);
+        }
+
+
+        // =====================================================================
+        // NEW METHODS — EXTENSION ONLY, NO EXISTING CODE CHANGED
+        // =====================================================================
+
+
+        // ---------------------------------------------------------------------
+        // SelectRacesForPredictionInput
+        // ---------------------------------------------------------------------
+        // Selects the qualifying races from an already-loaded EventRaceTimesDto
+        // collection to use as INPUTS to the prediction algorithm.
+        //
+        // This is the in-memory equivalent of GetLastRacesSinceAsync — it
+        // applies the same business rules but starts from a collection that is
+        // already in memory (e.g. loaded via RunnerService.GetRunnerDetailsAsync)
+        // rather than going back to the database.
+        //
+        // Use this method in both the public app (MyDetails) and the admin app
+        // (RunnerCalculator) so the input selection rules are consistent.
+        //
+        // BUSINESS RULES APPLIED:
+        //   ✅ Race must be completed (date is in the past relative to today)
+        //   ✅ Race must fall within the current season (on or after seasonStart)
+        //   ✅ Race must have a positive actual time recorded
+        //   ✅ Race must have a known distance in metres
+        //   ✅ Mile races are EXCLUDED from prediction inputs
+        //
+        // WHY MILE RACES ARE EXCLUDED FROM INPUTS:
+        //   A mile time is not a reliable predictor of performance at longer
+        //   distances such as 5km, 10km, or a half marathon. Including a mile
+        //   result would distort the predicted target time for those distances.
+        //
+        // IMPORTANT — THIS EXCLUSION IS ONE-DIRECTIONAL:
+        //   Mile races are excluded as INPUTS only. The prediction algorithm
+        //   can and should be used to produce a target time FOR a mile race,
+        //   using non-mile race inputs. Mile race results are also fully
+        //   included in the trophy points scoring system. This method enforces
+        //   only the input exclusion — nothing else.
+        // ---------------------------------------------------------------------
+        public static List<RecentRaceDto> SelectRacesForPredictionInput(
+            IEnumerable<EventRaceTimesDto> eventTimes,
+            DateTime seasonStart,
+            DateTime today,
+            int maxRaces = 3)
+        {
+            return eventTimes
+
+                // Must be a completed race (date confirmed, in the past)
+                .Where(t => t.RaceDate.HasValue)
+                .Where(t => t.RaceDate!.Value.Date < today)
+
+                // Must fall within the current season
+                .Where(t => t.RaceDate!.Value >= seasonStart)
+
+                // Must have a positive recorded actual time
+                .Where(t => t.ActualSeconds.HasValue && t.ActualSeconds.Value > 0)
+
+                // Must have a known distance in metres
+                .Where(t => t.DistanceMeters.HasValue && t.DistanceMeters.Value > 0)
+
+                // BUSINESS RULE: exclude mile races from prediction inputs.
+                // Mile times are poor predictors of longer-distance performance.
+                // See full explanation in the method summary above.
+                .Where(t => !IsOneMile(t.DistanceMeters!.Value))
+
+                // Most recent qualifying races first
+                .OrderByDescending(t => t.RaceDate)
+
+                // Take only the required number of races
+                .Take(maxRaces)
+
+                // Project to the DTO the prediction algorithm expects
+                .Select(t => new RecentRaceDto
+                {
+                    Distance = t.DistanceMeters!.Value,  // metres
+                    Actual = t.ActualSeconds!.Value    // seconds
+                })
+
+                .ToList();
+        }
+
+
+        // ---------------------------------------------------------------------
+        // IsOneMile
+        // ---------------------------------------------------------------------
+        // Returns true if the provided distance value is approximately one mile.
+        //
+        // WHY THIS IS A RANGE CHECK NOT AN EQUALITY CHECK:
+        //   Distance values in the database are stored as doubles in metres.
+        //   One mile is exactly 1609.344 metres. Minor floating point
+        //   representation differences or data-entry rounding (e.g. 1609.3 or
+        //   1609.35) could cause an exact equality check to fail silently.
+        //   A tolerance of ±5 metres is more than sufficient to catch all
+        //   real-world representations of a mile while remaining far enough
+        //   below 2km to avoid false positives.
+        //
+        // WHY THIS IS PRIVATE:
+        //   This helper exists solely to support SelectRacesForPredictionInput.
+        //   It does not need to be part of the public API of this service.
+        //   If a wider utility is needed in future, move it to DistanceService.
+        // ---------------------------------------------------------------------
+        private static bool IsOneMile(double meters)
+        {
+            const double oneMileMeters = 1609.344;
+            const double toleranceMeters = 5.0;
+
+            return Math.Abs(meters - oneMileMeters) <= toleranceMeters;
         }
 
     }

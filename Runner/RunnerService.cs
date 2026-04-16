@@ -3,15 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using RRCDataModel.Data;
+using RRCDataModel.Models;
+using XCalculator;  // AgeGrade — authoritative source, replaces RRCServices.AgeGrade.WAVAGrade
+using System.Diagnostics;
 
 namespace RRCServices.Runner
 {
-    using Microsoft.EntityFrameworkCore;
-    using RRCDataModel.Data;
-    using RRCDataModel.Models;
-    using RRCServices.AgeGrade;
-    using System.Diagnostics;
-
     public sealed class RunnerService : IRunnerService
     {
         private readonly RRCContext _db;
@@ -32,16 +31,13 @@ namespace RRCServices.Runner
                 .AsNoTracking()
                 .Where(r => r.Active == true);
 
-            // Helper local function: normalize for comparison
             static string NormalizeName(string s)
             {
-                // Trim and collapse multiple spaces, then uppercase
                 var trimmed = s.Trim();
                 var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 return string.Join(" ", parts).ToUpperInvariant();
             }
 
-            // 1) UKAN lookup (still best)
             if (!string.IsNullOrWhiteSpace(ukan))
             {
                 var normalizedUkan = ukan.Trim();
@@ -52,7 +48,6 @@ namespace RRCServices.Runner
                     .FirstOrDefaultAsync(ct);
             }
 
-            // 2) Name + DOB lookup (robust)
             if (!string.IsNullOrWhiteSpace(firstName)
                 && !string.IsNullOrWhiteSpace(secondName)
                 && dob.HasValue)
@@ -61,18 +56,13 @@ namespace RRCServices.Runner
                 var sn = NormalizeName(secondName);
                 var dobDate = dob.Value.Date;
 
-                // Compare DOB as DateTime.Date (SQL date) to avoid DateOnly translation quirks
-                // If your column is DateOnly? in EF, it still usually translates fine,
-                // but this is a safer cross-environment pattern if you have a DateTime-compatible projection.
                 return await q
                     .Where(r =>
                         r.firstname != null &&
                         r.secondname != null &&
                         r.dob.HasValue &&
-                        // normalize db fields in SQL
                         r.firstname.Trim().ToUpper() == fn &&
                         r.secondname.Trim().ToUpper() == sn &&
-                        // DateOnly compare, but ensure you're comparing DATE-only values
                         r.dob.Value == DateOnly.FromDateTime(dobDate)
                     )
                     .Select(r => (int?)r.EFKey)
@@ -81,8 +71,6 @@ namespace RRCServices.Runner
 
             return null;
         }
-
-
 
         public async Task<IReadOnlyList<RunnerListItemDto>> GetRunnersAsync(
             string? search, bool includeInactive = false, CancellationToken ct = default)
@@ -95,7 +83,6 @@ namespace RRCServices.Runner
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var s = search.Trim();
-                // search by first/second/full name
                 q = q.Where(r =>
                     (r.firstname + " " + r.secondname).Contains(s) ||
                     r.firstname.Contains(s) ||
@@ -121,19 +108,17 @@ namespace RRCServices.Runner
             var runner = await _db.runners
                   .AsNoTracking()
                   .Where(r => r.EFKey == runnerId)
-                  .Select(r => new 
+                  .Select(r => new
                   {
                       r.EFKey,
                       r.firstname,
                       r.secondname,
                       r.ukan,
-                      r.dob,          // DateOnly?
+                      r.dob,
                       r.email,
                       r.Active,
                       r.ageGradeCode,
                       r.gender
-
-                      // bool?
                   })
                   .SingleOrDefaultAsync(ct);
 
@@ -146,45 +131,34 @@ namespace RRCServices.Runner
             if (!includeInactiveTimes)
                 timesQ = timesQ.Where(t => t.Active != false);
 
-
-
-    var times = await (
-    from t in timesQ
-    join e in _db.Events.AsNoTracking() on t.EventId equals e.EFKey
-    join d in _db.distance.AsNoTracking() on e.DistanceCode equals d.Code into dd
-    from d in dd.DefaultIfEmpty()
-    orderby t.Date descending
-    select new EventRaceTimesDto
-    {
-        EventRunnerTimeId = t.EFKey,
-        EventId = t.EventId,
-
-        RaceTitle = e.Title,
-        RaceDistance = e.DistanceCode,
-
-        // ✅ NEW
-        DistanceMeters = d != null ? (double?)d.Distance1 : null,
-        ActualSeconds = t.Actual ?? 0,
-        TargetTime = t.Target ?? 0,
-        RaceTargetTime = FormatResult(t.Target ?? 0),
-        RaceActualTime = FormatResult(t.Actual ?? 0),
-        RaceDate = t.Date,
-
-        TimeDifference = FormatDifference(t.Target, t.Actual),
-
-        AgeGrade =
-            (t.Actual.HasValue && t.Actual.Value > 0
-             && runner.gender.HasValue
-             && runner.dob.HasValue
-             && t.Date.HasValue)
-            ? GetWavScore(t.Actual.Value, runner.gender.Value, runner.dob, e.DistanceCode, t.Date)
-            : 0
-    }
-).ToListAsync(ct);
-
-
-
-
+            var times = await (
+                from t in timesQ
+                join e in _db.Events.AsNoTracking() on t.EventId equals e.EFKey
+                join d in _db.distance.AsNoTracking() on e.DistanceCode equals d.Code into dd
+                from d in dd.DefaultIfEmpty()
+                orderby t.Date descending
+                select new EventRaceTimesDto
+                {
+                    EventRunnerTimeId = t.EFKey,
+                    EventId = t.EventId,
+                    RaceTitle = e.Title,
+                    RaceDistance = e.DistanceCode,
+                    DistanceMeters = d != null ? (double?)d.Distance1 : null,
+                    ActualSeconds = t.Actual ?? 0,
+                    TargetTime = t.Target ?? 0,
+                    RaceTargetTime = FormatResult(t.Target ?? 0),
+                    RaceActualTime = FormatResult(t.Actual ?? 0),
+                    RaceDate = t.Date,
+                    TimeDifference = FormatDifference(t.Target, t.Actual),
+                    AgeGrade =
+                        (t.Actual.HasValue && t.Actual.Value > 0
+                         && runner.gender.HasValue
+                         && runner.dob.HasValue
+                         && t.Date.HasValue)
+                        ? GetWavScore(t.Actual.Value, runner.gender.Value, runner.dob, e.DistanceCode, t.Date)
+                        : 0
+                }
+            ).ToListAsync(ct);
 
             return new RunnerDetailsDto
             {
@@ -199,13 +173,11 @@ namespace RRCServices.Runner
                 Gender = ToGenderString(runner.gender),
                 IsMale = (bool)runner.gender,
                 EventTimes = times
-                
             };
         }
 
         public async Task<int> CreateRunnerAsync(RunnerUpsertDto dto, CancellationToken ct = default)
         {
-            // enforce UKAN uniqueness if supplied
             if (!string.IsNullOrWhiteSpace(dto.Ukan))
             {
                 var exists = await _db.runners.AnyAsync(r => r.ukan == dto.Ukan, ct);
@@ -234,7 +206,6 @@ namespace RRCServices.Runner
             var entity = await _db.runners.SingleOrDefaultAsync(r => r.EFKey == runnerId, ct);
             if (entity is null) return false;
 
-            // UKAN unique check (only if changed + non-null)
             var newUkan = string.IsNullOrWhiteSpace(dto.Ukan) ? null : dto.Ukan.Trim();
             if (newUkan != null && !string.Equals(newUkan, entity.ukan, StringComparison.Ordinal))
             {
@@ -267,11 +238,9 @@ namespace RRCServices.Runner
 
         public async Task<int> CreateEventRunnerTimeAsync(int runnerId, EventRunnerTimeUpsertDto dto, CancellationToken ct = default)
         {
-            // validate runner exists (and optionally active)
             var runnerExists = await _db.runners.AnyAsync(r => r.EFKey == runnerId, ct);
             if (!runnerExists) throw new InvalidOperationException("Runner not found.");
 
-            // validate event exists
             var eventExists = await _db.Events.AnyAsync(e => e.EFKey == dto.EventId, ct);
             if (!eventExists) throw new InvalidOperationException("Event not found.");
 
@@ -291,7 +260,6 @@ namespace RRCServices.Runner
             return entity.EFKey;
         }
 
-
         public async Task<bool> UpdateEventRunnerActualAsync(int runnerId, int eventRunnerTimeId, EventRunnerTimeUpsertDto dto, CancellationToken ct = default)
         {
             var entity = await _db.EventRunnerTimes
@@ -299,7 +267,6 @@ namespace RRCServices.Runner
 
             if (entity is null) return false;
 
-            // optionally validate event exists if changing it
             if (entity.EventId != dto.EventId)
             {
                 var eventExists = await _db.Events.AnyAsync(e => e.EFKey == dto.EventId, ct);
@@ -307,7 +274,14 @@ namespace RRCServices.Runner
                 entity.EventId = dto.EventId;
             }
 
-            entity.RaceEventId = entity.RaceEventId;
+            if (entity.RaceEventId != null)
+            {
+                entity.RaceEventId = entity.RaceEventId;
+            }
+            else
+            {
+                entity.RaceEventId = dto.RaceEventId;
+            }
             entity.Target = entity.Target;
             entity.Actual = dto.ActualSeconds;
             entity.Date = entity.Date;
@@ -324,7 +298,6 @@ namespace RRCServices.Runner
 
             if (entity is null) return false;
 
-            // optionally validate event exists if changing it
             if (entity.EventId != dto.EventId)
             {
                 var eventExists = await _db.Events.AnyAsync(e => e.EFKey == dto.EventId, ct);
@@ -364,7 +337,6 @@ namespace RRCServices.Runner
                 null => "Unknown"
             };
 
-        // Domain uses bool? (true=male, false=female). Accept "Male"/"Female"/"Unknown"
         private static bool? ToGenderBool(string gender)
         {
             if (string.IsNullOrWhiteSpace(gender)) return null;
@@ -378,7 +350,6 @@ namespace RRCServices.Runner
             };
         }
 
-        // Your legacy formatting, preserved
         public static string FormatResult(int result)
         {
             if (result <= 0) return "No Result";
@@ -396,15 +367,17 @@ namespace RRCServices.Runner
             return $"{sign}{t.Hours:D2}h:{t.Minutes:D2}m:{t.Seconds:D2}s";
         }
 
+        // Delegates to Calculator.AgeGrade — the single authoritative age grading implementation.
+        // RRCServices/AgeGrade/WAVAGrade.cs and RRCServices/AgeGrade/AgeGrade.cs are now redundant
+        // and can be deleted from the RRCServices project.
         public static int GetWavScore(int time, bool gender, DateOnly? dob, string RaceCode, DateTime? RaceDate)
         {
-            DateTime dobDateTime = dob?.ToDateTime(TimeOnly.MinValue) ?? DateTime.MinValue;
-            WAVAGrade model = new WAVAGrade();
-            return (int)model.GetGrade(dobDateTime, gender, RaceCode, time, (DateTime)RaceDate);
+            DateTime? dobDateTime = dob.HasValue
+                ? dob.Value.ToDateTime(TimeOnly.MinValue)
+                : (DateTime?)null;
 
+            return XCalculator.AgeGrade.GetWavScore(time, gender, dobDateTime, RaceCode, RaceDate);
         }
-
-
     }
-
 }
+

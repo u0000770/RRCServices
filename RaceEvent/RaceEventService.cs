@@ -234,16 +234,22 @@ public class RaceEventService : IRaceEventService
         if (!string.IsNullOrWhiteSpace(distanceCode))
             query = query.Where(x => x.e.DistanceCode == distanceCode);
 
-        // ✅ Only include race events that have at least one ACTUAL result
+        //   ✅ Only include race events that have at least one ACTUAL result
         query = query.Where(x =>
-            db.EventRunnerTimes.AsNoTracking().Any(t =>
-                t.RaceEventId == x.re.EFKey
-                && t.Actual.HasValue
-                && t.Actual.Value > 0
-            )
-        );
+            db.EventRunnerTimes.AsNoTracking().Any(t => t.RaceEventId == x.re.EFKey  && t.Actual.HasValue && t.Actual.Value > 0)
+     
 
-        return await query
+     //   query = query.Where(x =>
+     //db.EventRunnerTimes.AsNoTracking().Any(t =>
+     //    t.Actual.HasValue &&
+     //    t.Actual.Value > 0 &&
+     //    t.Date <= DateTime.Today
+     //)
+ );
+
+        var fred = query.ToList();
+
+        var result = await query
             .OrderBy(x => x.re.Date)
             .Select(x => new RaceEventListItemDTO
             {
@@ -257,6 +263,9 @@ public class RaceEventService : IRaceEventService
                 DistanceMeters = x.d.Distance1
             })
             .ToListAsync();
+
+
+        return result;
     }
 
 
