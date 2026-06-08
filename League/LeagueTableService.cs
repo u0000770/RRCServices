@@ -1,5 +1,4 @@
-﻿#region origional
-
+#region original
 //using Microsoft.EntityFrameworkCore;
 //using RRCDataModel.Data;
 //using RRCServices.League.DTO;
@@ -120,15 +119,6 @@
 //                    })
 //                    .ToList();
 
-//                // ❌ OLD (fails if DistanceCode contains whitespace / casing oddities)
-//                //List<LeagueRaceDto> dbOnly = runnerRaces
-//                //    .Where(x => !string.IsNullOrWhiteSpace(x.DistanceCode) && dbCodes.Contains(x.DistanceCode))
-//                //    .ToList();
-
-//                // ❌ OLD inline helper (functionally OK, but inside loop)
-//                //static string? NormCode(string? code)
-//                //    => string.IsNullOrWhiteSpace(code) ? null : code.Trim();
-
 //                ScoreLine dbt = ScoreRunner(
 //                    runnerId: g.Key,
 //                    runnerName: runnerName,
@@ -180,7 +170,7 @@
 //            var assignedToJr = new HashSet<int>();
 //            var assignedToDb = new HashSet<int>();
 
-//            // Assign in “best-first” order across BOTH tables (reduces bias from pre-removal ranks)
+//            // Assign in "best-first" order across BOTH tables (reduces bias from pre-removal ranks)
 //            var unionRank = jrRanked.Select(x => x.RunnerId)
 //                .Concat(dbRanked.Select(x => x.RunnerId))
 //                .Distinct()
@@ -200,34 +190,6 @@
 //                if (PreferDb(runnerId)) assignedToDb.Add(runnerId);
 //                else assignedToJr.Add(runnerId);
 //            }
-
-//            // ❌ OLD position maps + assignment (kept for reference)
-//            //Dictionary<int, int> jrPos = new();
-//            //for (int i = 0; i < jrRanked.Count; i++)
-//            //    jrPos[jrRanked[i].RunnerId] = i + 1;
-//            //
-//            //Dictionary<int, int> dbPos = new();
-//            //for (int i = 0; i < dbRanked.Count; i++)
-//            //    dbPos[dbRanked[i].RunnerId] = i + 1;
-//            //
-//            //// Assign each runner to ONE league based on best position (JR wins ties)
-//            //HashSet<int> assignedToJr = new();
-//            //HashSet<int> assignedToDb = new();
-//            //
-//            //List<int> allRunnerIds = jrPos.Keys.Union(dbPos.Keys).ToList();
-//            //
-//            //foreach (int runnerId in allRunnerIds)
-//            //{
-//            //    bool hasJr = jrPos.TryGetValue(runnerId, out int jrP);
-//            //    bool hasDb = dbPos.TryGetValue(runnerId, out int dbP);
-//            //
-//            //    if (hasJr && !hasDb) { assignedToJr.Add(runnerId); continue; }
-//            //    if (!hasJr && hasDb) { assignedToDb.Add(runnerId); continue; }
-//            //
-//            //    // in both: pick best rank (smaller number), tie -> JR
-//            //    if (jrP <= dbP) assignedToJr.Add(runnerId);
-//            //    else assignedToDb.Add(runnerId);
-//            //}
 
 //            // Build final display rows with positions 1..n
 //            List<TrophyLeagueRowDto> finalJr = jrRanked
@@ -399,6 +361,13 @@ namespace RRCServices.League
     //   Miss target time           →   6 points
     //   Improvement capped at 120 seconds per race for tie-breaking purposes
     //
+    // 2026 NO-TARGET RULE:
+    //   If a runner has a valid actual time but no predicted time, and the race
+    //   is in 2026, they are awarded a flat 6 points with 0 time difference.
+    //   This applies to both JR and DB trophies.
+    //   Races without a target are included in the top-N selection but rank at
+    //   the bottom (ImprovementSeconds returns 0 for them in LeagueRaceDto).
+    //
     // ASSIGNMENT RULE:
     //   Each runner appears in exactly ONE league table — the one where they
     //   achieve their best ranking position. If their rank is equal in both,
@@ -417,6 +386,8 @@ namespace RRCServices.League
         // LeagueTableService logic from TrophyCalculator logic.
         // IMPORTANT: all points/trophy-time arithmetic lives in TrophyCalculator.
         //            Do not add scoring logic here — this service only orchestrates.
+        //            Exception: the 2026 no-target rule is intercepted in ScoreRunner
+        //            before the calculator is called, as there is no target to calculate with.
         private readonly ITrophyCalculator _calculator;
 
         // The set of distance codes that qualify a race for the DB Trophy.
@@ -469,7 +440,10 @@ namespace RRCServices.League
             // A race is scorable if:
             //   - The runner is active (not soft-deleted)
             //   - The EventRunnerTime record is active
-            //   - The race has both a Target time and an Actual time recorded
+            //   - The race has a valid actual time AND either:
+            //       a) a valid predicted time (normal path), OR
+            //       b) the race is in 2026 and has no predicted time
+            //          (2026 no-target rule — awarded flat 6 points in ScoreRunner)
             //   - The race date falls within the season window (inclusive)
             //
             // We join three tables here: EventRunnerTimes (the results), runners
@@ -489,7 +463,16 @@ namespace RRCServices.League
                       && t.Date.Value >= seasonStart
                       && t.Date.Value <= seasonEnd
                       && t.Actual.HasValue && t.Actual.Value > 0   // must have a real finish time
-                      && t.Target.HasValue && t.Target.Value > 0   // must have a real target time
+
+                      // 2026 NO-TARGET RULE: allow rows where target is missing/zero
+                      // provided the race falls in 2026. All other years still require
+                      // a valid target time as before.
+                      // ❌ OLD: && t.Target.HasValue && t.Target.Value > 0
+                      && (
+                            (t.Target.HasValue && t.Target.Value > 0) ||
+                            t.Date.Value.Year == 2026
+                         )
+
                 select new LeagueRaceDto
                 {
                     RunnerId = r.EFKey,
@@ -498,8 +481,18 @@ namespace RRCServices.League
                     RaceDate = t.Date.Value,
                     DistanceCode = e.DistanceCode,
                     RaceTitle = e.Title,
-                    TargetSeconds = t.Target.Value,
-                    ActualSeconds = t.Actual.Value
+
+                    // 2026 NO-TARGET RULE: target defaults to 0 when not set.
+                    // HasTarget drives the scoring decision in ScoreRunner —
+                    // TargetSeconds is never used directly for a no-target race.
+                    // ❌ OLD: TargetSeconds = t.Target.Value,
+                    TargetSeconds = t.Target ?? 0,
+
+                    ActualSeconds = t.Actual!.Value,
+
+                    // 2026 NO-TARGET RULE: true = normal scoring path via TrophyCalculator.
+                    //                      false = flat 6 points awarded in ScoreRunner.
+                    HasTarget = t.Target.HasValue && t.Target.Value > 0
                 }
             ).ToListAsync(ct);
 
@@ -561,6 +554,13 @@ namespace RRCServices.League
                 if (dbt.Points > 0) dbScores.Add(dbt);
             }
 
+            // TEMP DEBUG - remove after fix
+            var paulJr = jrScores.FirstOrDefault(x => x.RunnerId == 182);
+            //var paulDb = dbScores.FirstOrDefault(x => x.RunnerId == 182);
+            //System.Diagnostics.Debug.WriteLine($"Paul JR: {(paulJr == null ? "NOT FOUND" : $"{paulJr.Points} pts, {paulJr.TimeDiffSeconds}s")}");
+            //System.Diagnostics.Debug.WriteLine($"Paul DB: {(paulDb == null ? "NOT FOUND" : $"{paulDb.Points} pts, {paulDb.TimeDiffSeconds}s")}");
+            // END TEMP DEBUG
+
             // -----------------------------------------------------------------
             // STEP 4: Rank each trophy's scores.
             // -----------------------------------------------------------------
@@ -580,79 +580,127 @@ namespace RRCServices.League
                 .ThenBy(x => x.RunnerName)
                 .ToList();
 
-            // -----------------------------------------------------------------
-            // STEP 5: Build position lookup dictionaries.
-            // -----------------------------------------------------------------
-            // These map runnerId → rank position (1-based) in each trophy table.
-            // We use these in the assignment step below to decide which league
-            // each runner should appear in.
-            // -----------------------------------------------------------------
-            var jrPos = jrRanked
-                .Select((x, idx) => new { x.RunnerId, Pos = idx + 1 })
-                .ToDictionary(x => x.RunnerId, x => x.Pos);
 
-            var dbPos = dbRanked
-                .Select((x, idx) => new { x.RunnerId, Pos = idx + 1 })
-                .ToDictionary(x => x.RunnerId, x => x.Pos);
 
             // -----------------------------------------------------------------
-            // STEP 6: Assign each runner to exactly ONE league table.
+            // STEP 5: Assign each runner to exactly ONE league table.
             // -----------------------------------------------------------------
-            // Business rule: a runner must not appear in both tables — they go
-            // into the one where they rank best (smallest position number).
+            // IMPORTANT - WHY WE COMPARE RAW SCORES, NOT POSITIONS:
             //
-            // Tie-break rule: if their position is equal in both tables, they
-            // are assigned to the DB Trophy table.
+            // The original implementation built position lookup dictionaries
+            // (jrPos, dbPos) from the full ranked lists BEFORE assignment, then
+            // used those positions to decide which table each runner belonged in.
             //
-            // We process runners in best-rank-first order across both tables to
-            // minimise bias that would arise from processing one table before the
-            // other when positions are similar.
+            // This caused a subtle but significant bug: runners who would ultimately
+            // be assigned to DB were still occupying positions in the JR ranked list,
+            // artificially pushing down runners like Paul McDermott who genuinely
+            // belonged in JR. For example, Paul had 38 JR points (true position 6)
+            // but was showing as position 11 in the pre-assignment JR list because
+            // 5 DB-bound runners with higher points were ahead of him. His DB position
+            // was 9. Since 9 < 11, the old logic incorrectly assigned him to DB.
+            //
+            // The fix is to compare each runner's RAW SCORES directly against each
+            // other rather than their positions in a polluted combined pool.
+            // Position numbers are meaningless before assignment — only the actual
+            // points and tiebreaker values matter for deciding which table a runner
+            // belongs in.
+            //
+            // ASSIGNMENT RULES (in priority order):
+            //   1. Runner only scored in JR                          → JR
+            //   2. Runner only scored in DB                          → DB
+            //   3. Runner scored in both, JR points higher           → JR
+            //   4. Runner scored in both, DB points higher           → DB
+            //   5. Runner scored in both, points equal, JR tiebreaker higher → JR
+            //   6. Runner scored in both, points equal, DB tiebreaker higher → DB
+            //   7. Runner scored in both, points equal, tiebreaker equal     → DB
+            //      (DB is the tiebreak of last resort per the original business rule)
             // -----------------------------------------------------------------
-
-            // Local function: returns true if a runner's best position is in
-            // the DB table (or if they only appear in the DB table).
-            bool PreferDb(int runnerId)
-            {
-                var hasJr = jrPos.TryGetValue(runnerId, out var jp);
-                var hasDb = dbPos.TryGetValue(runnerId, out var dp);
-
-                if (hasDb && !hasJr) return true;   // only in DB table
-                if (!hasDb && hasJr) return false;  // only in JR table
-
-                // In both tables: assign to DB if DB rank is equal or better
-                return dp <= jp;
-            }
 
             var assignedToJr = new HashSet<int>();
             var assignedToDb = new HashSet<int>();
 
-            // Build a combined ordered list of all runner IDs, sorted so that
-            // runners with the best overall rank across both tables are processed
-            // first. This prevents a runner being "locked out" of their preferred
-            // table because a lower-ranked runner was processed earlier.
-            var unionRank = jrRanked.Select(x => x.RunnerId)
-                .Concat(dbRanked.Select(x => x.RunnerId))
-                .Distinct()
-                .OrderBy(id =>
-                {
-                    // Each runner's "best" position is the minimum of their two
-                    // positions (or MaxValue if they don't appear in that table)
-                    var jp = jrPos.TryGetValue(id, out var j) ? j : int.MaxValue;
-                    var dp = dbPos.TryGetValue(id, out var d) ? d : int.MaxValue;
-                    return Math.Min(jp, dp);
-                })
-                .ThenBy(id => PreferDb(id) ? 0 : 1); // if same best rank, DB first
+            // Build fast lookup sets for which trophies each runner scored in
+            var jrRunnerIds = new HashSet<int>(jrScores.Select(x => x.RunnerId));
+            var dbRunnerIds = new HashSet<int>(dbScores.Select(x => x.RunnerId));
 
-            foreach (var runnerId in unionRank)
+            // Build score lookup dictionaries for runners who appear in both tables
+            // (only needed for the comparison case — rules 3 through 7 above)
+            var jrScoreLookup = jrScores.ToDictionary(x => x.RunnerId);
+            var dbScoreLookup = dbScores.ToDictionary(x => x.RunnerId);
+
+            foreach (var runnerId in jrRunnerIds.Union(dbRunnerIds))
             {
-                // Skip if already assigned (can happen because the same runner
-                // ID may appear in both jrRanked and dbRanked before Distinct)
-                if (assignedToJr.Contains(runnerId) || assignedToDb.Contains(runnerId))
-                    continue;
+                var inJr = jrRunnerIds.Contains(runnerId);
+                var inDb = dbRunnerIds.Contains(runnerId);
 
-                if (PreferDb(runnerId)) assignedToDb.Add(runnerId);
-                else assignedToJr.Add(runnerId);
+                // Rules 1 and 2: runner only appears in one table
+                if (inJr && !inDb)
+                {
+                    assignedToJr.Add(runnerId);
+                    continue;
+                }
+
+                if (inDb && !inJr)
+                {
+                    assignedToDb.Add(runnerId);
+                    continue;
+                }
+
+                // Rules 3 through 7: runner scored in both tables
+                // Compare raw scores directly — position numbers are meaningless
+                // before assignment and must not be used here (see note above).
+                var jr = jrScoreLookup[runnerId];
+                var dbell = dbScoreLookup[runnerId];
+
+                // Rule 3: JR points strictly higher → JR
+                if (jr.Points > dbell.Points)
+                {
+                    assignedToJr.Add(runnerId);
+                    continue;
+                }
+
+                // Rule 4: DB points strictly higher → DB
+                if (dbell.Points > jr.Points)
+                {
+                    assignedToDb.Add(runnerId);
+                    continue;
+                }
+
+                // Points are equal — fall through to tiebreaker
+                // Rule 5: JR tiebreaker strictly higher → JR
+                if (jr.TimeDiffSeconds > dbell.TimeDiffSeconds)
+                {
+                    assignedToJr.Add(runnerId);
+                    continue;
+                }
+
+                // Rule 6 and 7: DB tiebreaker higher or everything equal → DB
+                // DB is the tiebreak of last resort per the original business rule
+                assignedToDb.Add(runnerId);
             }
+
+            // -----------------------------------------------------------------
+            // STEP 6: Build position lookup dictionaries.
+            // -----------------------------------------------------------------
+            // These are now built AFTER assignment, using only the runners who
+            // have been assigned to each table. This ensures position numbers
+            // reflect the true competitive ranking within each table rather than
+            // a polluted combined pool that includes runners from both tables.
+            //
+            // NOTE: These dictionaries are no longer used for assignment decisions
+            // (see Step 5 above). They are retained here in case they are needed
+            // for debugging or future features. The final display positions are
+            // calculated fresh in Step 7 using idx + 1 on the filtered lists.
+            // -----------------------------------------------------------------
+            var jrPos = jrRanked
+                .Where(x => assignedToJr.Contains(x.RunnerId))
+                .Select((x, idx) => new { x.RunnerId, Pos = idx + 1 })
+                .ToDictionary(x => x.RunnerId, x => x.Pos);
+
+            var dbPos = dbRanked
+                .Where(x => assignedToDb.Contains(x.RunnerId))
+                .Select((x, idx) => new { x.RunnerId, Pos = idx + 1 })
+                .ToDictionary(x => x.RunnerId, x => x.Pos);
 
             // -----------------------------------------------------------------
             // STEP 7: Build the final display rows.
@@ -712,6 +760,12 @@ namespace RRCServices.League
         //   4. Accumulates points and improvement time
         //   5. Caps total points at topN × 10 (the theoretical maximum)
         //
+        // 2026 NO-TARGET RULE:
+        //   Before calling TrophyCalculator, ScoreRunner checks whether the race
+        //   has a target time. If not, and the race is in 2026, it awards a flat
+        //   6 points and 0 time difference without invoking the calculator at all.
+        //   TrophyCalculator is never called for no-target races.
+        //
         // WHY INTERNAL (not private):
         //   This method is internal so that RRCServices.Tests can call it directly
         //   via [assembly: InternalsVisibleTo("RRCServices.Tests")]. This allows
@@ -754,6 +808,9 @@ namespace RRCServices.League
             // target by more — these are their "best" races for league purposes.
             // Races where they missed their target have a negative improvement
             // and will only be selected if the runner has fewer than topN races.
+            // 2026 NO-TARGET RULE: ImprovementSeconds returns 0 for no-target races
+            // (see LeagueRaceDto), so they rank below all races with a real target
+            // and are only selected to fill remaining slots when topN is not reached.
             List<LeagueRaceDto> top = races
                 .OrderByDescending(r => r.ImprovementSeconds)
                 .Take(topN)
@@ -764,8 +821,17 @@ namespace RRCServices.League
 
             foreach (LeagueRaceDto r in top)
             {
-                // Delegate entirely to TrophyCalculator — this is the single
-                // source of truth for the scoring rules.
+                // 2026 NO-TARGET RULE: if the race has no predicted time and is in
+                // 2026, award a flat 6 points with no time difference contribution.
+                // TrophyCalculator is bypassed entirely — there is no target to score against.
+                if (!r.HasTarget && r.RaceDate.Year == 2026)
+                {
+                    points += 6;
+                    continue;
+                }
+
+                // Normal path: delegate entirely to TrophyCalculator — this is the
+                // single source of truth for the scoring rules.
                 // Rule: beat or equal target → 10 pts; miss → 6 pts.
                 // Improvement time is capped at 120 seconds per race.
                 TrophyResult trophy = calculator.Calculate(r.TargetSeconds, r.ActualSeconds);
@@ -821,5 +887,3 @@ namespace RRCServices.League
         }
     }
 }
-
-
