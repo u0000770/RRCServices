@@ -1,13 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace RRCServices.League
-{
+﻿
+    using global::RRCServices.League.Admin;
     using global::RRCServices.League.DTO;
-    using global::RRCServices.League.DTO.RRCServices.League.Admin;
+    using global::RRCServices.League.Trophy;
     using global::RRCServices.RRCServices.League.Admin;
     using Microsoft.EntityFrameworkCore;
     using RRCDataModel.Data;
@@ -31,7 +25,8 @@ namespace RRCServices.League
         //   Crucially, this service REUSES the same scoring infrastructure:
         //     - The same EF query (same filters, same 2026 no-target rule)
         //     - LeagueTableService.ScoreRunner (internal static method, same assembly)
-        //     - The same assignment rules (compare raw scores, DB is last-resort tiebreak)
+        //     - The same assignment rules, via the shared TrophyAssignmentResolver
+        //       (JR > 10k eligibility + best settled position, tie -> JR)
         //
         //   This means the scores shown here are guaranteed to match the public
         //   league tables exactly. There is no duplicated scoring logic.
@@ -61,6 +56,21 @@ namespace RRCServices.League
                 "5m",
                 "5km",
                 "1m"
+                };
+
+            // The set of distance codes that qualify a runner for the JR Trophy
+            // (rule D: "only qualifies for JR if they have run a race longer than 10k").
+            // These are the codes in the `distance` reference table whose length
+            // exceeds 10,000 m: 10 Mile (16,093 m), Half Marathon (21,082 m),
+            // 20 Mile (32,187 m) and Marathon (42,165 m). If a new long-distance
+            // code is ever added to the system it must also be added here.
+            private static readonly HashSet<string> JrQualifyingDistanceCodes =
+                new(StringComparer.OrdinalIgnoreCase)
+                {
+                "10m",
+                "13m",
+                "20m",
+                "26m"
                 };
 
             public RunnerLeagueSummaryService(
@@ -134,7 +144,12 @@ namespace RRCServices.League
                 // ScoreRunner is internal and visible to this assembly via the
                 // InternalsVisibleTo attribute already declared in the .csproj.
                 // -----------------------------------------------------------------
-                var results = new List<RunnerLeagueSummaryDto>(racesByRunner.Count);
+                // Phase 1 — score every runner for both trophies, and capture the
+                // inputs the assignment resolver needs. We score everyone first
+                // because the assignment (Phase 2) depends on the whole field, not
+                // just one runner at a time.
+                var scored = new Dictionary<int, ScoredRunner>(racesByRunner.Count);
+                var candidates = new List<TrophyCandidate>(racesByRunner.Count);
 
                 foreach (IGrouping<int, LeagueRaceDto> g in racesByRunner)
                 {
@@ -165,27 +180,59 @@ namespace RRCServices.League
                         topN: 6,
                         calculator: _calculator);
 
-                    // --- Determine assignment using the same rules as LeagueTableService ---
-                    TrophyType assigned = DetermineAssignment(jr, dbell);
+                    // Rule D: JR is only open to runners who have raced longer than 10k.
+                    bool jrEligible = allRaces.Any(r => IsJrQualifyingDistance(r.DistanceCode));
 
-                    results.Add(new RunnerLeagueSummaryDto
+                    scored[runnerId] = new ScoredRunner(jr, dbell, runnerName, ukan);
+                    candidates.Add(new TrophyCandidate
                     {
                         RunnerId = runnerId,
                         RunnerName = runnerName,
-                        Ukan = ukan,
-                        TotalRaces = jr.TotalRaces,   // JR sees all distances = full count
                         JrPoints = jr.Points,
                         JrTimeDiff = jr.TimeDiffSeconds,
-                        DbRaces = dbell.TotalRaces,   // DB sees filtered distances only
                         DbPoints = dbell.Points,
                         DbTimeDiff = dbell.TimeDiffSeconds,
-                        AssignedTrophy = assigned
+                        JrEligible = jrEligible
                     });
                 }
 
                 // -----------------------------------------------------------------
-                // STEP 4: Return sorted by runner name for easy reading in the UI.
+                // STEP 4: Assign each runner to exactly one trophy.
                 // -----------------------------------------------------------------
+                // Uses the agreed end-of-season rules — JR > 10k eligibility plus
+                // best settled position (tie -> JR) — via the shared resolver, so the
+                // admin screen and the public tables can never disagree.
+                // -----------------------------------------------------------------
+                IReadOnlyDictionary<int, TrophyType> assignment =
+                    TrophyAssignmentResolver.Resolve(candidates);
+
+                // -----------------------------------------------------------------
+                // STEP 5: Build the admin rows, then sort by runner name for the UI.
+                // -----------------------------------------------------------------
+                var results = new List<RunnerLeagueSummaryDto>(scored.Count);
+                foreach ((int runnerId, ScoredRunner s) in scored)
+                {
+                    // A runner who scored in neither trophy is absent from `assignment`;
+                    // defaulting to JR is harmless as they have zero in both.
+                    TrophyType assigned = assignment.TryGetValue(runnerId, out TrophyType t)
+                        ? t
+                        : TrophyType.JR;
+
+                    results.Add(new RunnerLeagueSummaryDto
+                    {
+                        RunnerId = runnerId,
+                        RunnerName = s.Name,
+                        Ukan = s.Ukan,
+                        TotalRaces = s.Jr.TotalRaces,   // JR sees all distances = full count
+                        JrPoints = s.Jr.Points,
+                        JrTimeDiff = s.Jr.TimeDiffSeconds,
+                        DbRaces = s.Db.TotalRaces,      // DB sees filtered distances only
+                        DbPoints = s.Db.Points,
+                        DbTimeDiff = s.Db.TimeDiffSeconds,
+                        AssignedTrophy = assigned
+                    });
+                }
+
                 return results
                     .OrderBy(x => x.RunnerName)
                     .ToList();
@@ -193,37 +240,17 @@ namespace RRCServices.League
 
 
             // =====================================================================
-            // DetermineAssignment
+            // Trophy assignment now lives in TrophyAssignmentResolver (rules D/E/F:
+            // JR > 10k eligibility + best settled position, tie -> JR). The previous
+            // DetermineAssignment method compared raw points and was removed: it
+            // ignored eligibility and was biased toward JR because JR scores 8 races
+            // to DB's 6.
             // =====================================================================
-            // Mirrors the assignment logic in LeagueTableService Step 5 exactly.
-            // Both methods must stay in sync if the assignment rules ever change.
-            //
-            // ASSIGNMENT RULES (in priority order):
-            //   1. Only scored in JR                            → JR
-            //   2. Only scored in DB                            → DB
-            //   3. Scored in both, JR points strictly higher    → JR
-            //   4. Scored in both, DB points strictly higher    → DB
-            //   5. Equal points, JR time diff strictly higher   → JR
-            //   6. Equal points, DB time diff higher or equal   → DB (last-resort tiebreak)
-            // =====================================================================
-            private static TrophyType DetermineAssignment(ScoreLine jr, ScoreLine db)
-            {
-                bool hasJr = jr.Points > 0;
-                bool hasDb = db.Points > 0;
 
-                if (hasJr && !hasDb) return TrophyType.JR;
-                if (hasDb && !hasJr) return TrophyType.DB;
-
-                // Scored in both — compare raw scores
-                if (jr.Points > db.Points) return TrophyType.JR;
-                if (db.Points > jr.Points) return TrophyType.DB;
-
-                // Points equal — use time diff tiebreaker
-                if (jr.TimeDiffSeconds > db.TimeDiffSeconds) return TrophyType.JR;
-
-                // DB tiebreak of last resort (includes exact equal case)
-                return TrophyType.DB;
-            }
+            // A runner's scored result for both trophies, carried between the
+            // scoring phase and the row-building phase of GetSummaryAsync.
+            private readonly record struct ScoredRunner(
+                ScoreLine Jr, ScoreLine Db, string Name, string? Ukan);
 
 
             // =====================================================================
@@ -237,7 +264,19 @@ namespace RRCServices.League
                 if (string.IsNullOrWhiteSpace(distanceCode)) return false;
                 return DbDistanceCodes.Contains(distanceCode.Trim());
             }
+
+            // =====================================================================
+            // IsJrQualifyingDistance
+            // =====================================================================
+            // Returns true if the distance code is a race longer than 10k, which is
+            // what qualifies a runner for the JR Trophy (rule D). Mirrors the shape
+            // of IsDbDistance and trims for the same data-hygiene reasons.
+            // =====================================================================
+            private static bool IsJrQualifyingDistance(string? distanceCode)
+            {
+                if (string.IsNullOrWhiteSpace(distanceCode)) return false;
+                return JrQualifyingDistanceCodes.Contains(distanceCode.Trim());
+            }
         }
     }
 
-}

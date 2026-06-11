@@ -1,4 +1,5 @@
-﻿using RRCServices.League.DTO.RRCServices.League.Admin;
+﻿
+using RRCServices.League.Admin;
 using System;
 using System.Collections.Generic;
 using System.Linq;

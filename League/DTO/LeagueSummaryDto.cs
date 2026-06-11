@@ -3,10 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using RRCServices.League.DTO;
 
-namespace RRCServices.League.DTO
-{
-    namespace RRCServices.League.Admin
+namespace RRCServices.League.Admin
     {
         // =========================================================================
         // RunnerLeagueSummaryDto
@@ -87,13 +86,12 @@ namespace RRCServices.League.DTO
             // --- Assignment ------------------------------------------------------
 
             /// <summary>
-            /// The trophy table this runner has been assigned to.
-            /// Determined by comparing raw JR and DB scores directly:
-            ///   - Higher points → that table
-            ///   - Equal points, higher time diff → that table
-            ///   - Everything equal → DB (tiebreak of last resort)
+            /// The trophy table this runner has been assigned to, via the shared
+            /// TrophyAssignmentResolver:
+            ///   - JR is only open to runners who have raced longer than 10k
+            ///   - Otherwise the runner is placed in whichever trophy gives their
+            ///     best final (settled) position; an equal position goes to JR
             /// </summary>
             public TrophyType AssignedTrophy { get; init; }
         }
     }
-}
