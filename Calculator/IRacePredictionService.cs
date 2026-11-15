@@ -61,16 +61,17 @@ namespace RRCServices.Calculator
         public sealed class RacePredictionService : IRacePredictionService
         {
             private readonly IDbContextFactory<RRCContext> _factory;
-            private readonly ISeasonSettingsService _seasonSettings;
+            // SEASON WORK (batch 2): ISeasonSettingsService -> ISeasonService
+            private readonly ISeasonService _seasons;
             private readonly CalculatorService _calculator;
 
             public RacePredictionService(
                 IDbContextFactory<RRCContext> factory,
-                ISeasonSettingsService seasonSettings,
+                ISeasonService seasons,
                 CalculatorService calculator)
             {
                 _factory = factory;
-                _seasonSettings = seasonSettings;
+                _seasons = seasons;
                 _calculator = calculator;
             }
 
@@ -254,14 +255,13 @@ namespace RRCServices.Calculator
                 if (raceEventId <= 0) return new List<RunnerPredictionDto>();
                 if (lastN <= 0) lastN = 3;
 
-                var season = await _seasonSettings.GetAsync(ct);
-
-                // DateOnly -> DateTime (inclusive start)
-          //      var seasonStart = season.SeasonStartDate.ToDateTime(TimeOnly.MinValue);
-                 var seasonStart =  new DateTime(2025, 11, 30);
-                // Optional: inclusive end
-                //var seasonEnd = season.SeasonEndDate.ToDateTime(TimeOnly.MaxValue);
-                var seasonEnd =  new DateTime(2026, 11, 30);
+                // SEASON WORK (batch 2): the hard-coded window 2025-11-30 .. 2026-11-30
+                // has been removed. The season is now chosen from the RACE DATE
+                // (see step 1b below), using ISeasonService.GetEffectiveAsync:
+                //   - a race inside a season uses that season's races
+                //   - the special November race (between seasons) uses the
+                //     season that has just ended
+                //   - predictions reset on 01 Jan
 
                 await using var db = await _factory.CreateDbContextAsync(ct);
 
@@ -294,8 +294,20 @@ namespace RRCServices.Calculator
 
                 var raceDate = race.RaceDate;
 
+                // 1b) SEASON WORK (batch 2): season that applies to this race.
+                //     Null only if the race is before the first season in config.Season.
+                var season = await _seasons.GetEffectiveAsync(DateOnly.FromDateTime(raceDate), ct);
+                if (season is null)
+                    return new List<RunnerPredictionDto>();
+
+                // Copied into locals so EF sends them as plain query parameters.
+                // Half-open range [seasonStart, seasonEndExclusive) so races on the
+                // season's last day are included whatever their time of day.
+                var seasonStart = season.Window.FromInclusive;
+                var seasonEndExclusive = season.Window.ToExclusive;
+
                 // 2) Find eligible active runners:
-                //    Active == true AND has at least one completed race since seasonStart
+                //    Active == true AND has at least one completed race in the season
                 var eligibleRunners = await db.runners
                     .AsNoTracking()
                     .Where(r => r.Active == true)
@@ -307,7 +319,7 @@ namespace RRCServices.Calculator
                             t.Actual.Value > 0 &&
                             t.Date.HasValue &&
                             t.Date.Value >= seasonStart &&
-                            t.Date.Value <= seasonEnd
+                            t.Date.Value < seasonEndExclusive
                         )
                     )
                     .Select(r => new

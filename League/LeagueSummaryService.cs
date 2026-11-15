@@ -3,6 +3,7 @@
     using global::RRCServices.League.DTO;
     using global::RRCServices.League.Trophy;
     using global::RRCServices.RRCServices.League.Admin;
+    using global::RRCServices.Season;
     using Microsoft.EntityFrameworkCore;
     using RRCDataModel.Data;
 
@@ -23,7 +24,8 @@
         //   understand why each assignment decision was made.
         //
         //   Crucially, this service REUSES the same scoring infrastructure:
-        //     - The same EF query (same filters, same 2026 no-target rule)
+        //     - The same EF query (same filters), and the same no-target rule via
+        //       LeagueTableService.ApplyNoTargetRule (SEASON WORK, batch 2+3)
         //     - LeagueTableService.ScoreRunner (internal static method, same assembly)
         //     - The same assignment rules, via the shared TrophyAssignmentResolver
         //       (JR > 10k eligibility + best settled position, tie -> JR)
@@ -44,6 +46,9 @@
         {
             private readonly IDbContextFactory<RRCContext> _factory;
             private readonly ITrophyCalculator _calculator;
+
+            // SEASON WORK (batch 2+3): seasons decide which no-target races may score.
+            private readonly ISeasonService _seasons;
 
             // The set of distance codes that qualify for the DB Trophy.
             // Must stay in sync with LeagueTableService.DbDistanceCodes.
@@ -75,10 +80,12 @@
 
             public RunnerLeagueSummaryService(
                 IDbContextFactory<RRCContext> factory,
-                ITrophyCalculator calculator)
+                ITrophyCalculator calculator,
+                ISeasonService seasons)
             {
                 _factory = factory;
                 _calculator = calculator;
+                _seasons = seasons;
             }
 
 
@@ -100,7 +107,9 @@
                 // LeagueTableService should be mirrored here.
                 //
                 // Scorable = active runner, active time entry, valid actual time,
-                // and either a valid target time OR a 2026 race (no-target rule).
+                // and either a valid target time OR a no-target race in a season
+                // with AllowNoTarget on (no-target rule, applied after the query by
+                // LeagueTableService.ApplyNoTargetRule — SEASON WORK, batch 2+3).
                 // -----------------------------------------------------------------
                 List<LeagueRaceDto> races = await (
                     from t in db.EventRunnerTimes.AsNoTracking()
@@ -112,10 +121,9 @@
                           && t.Date.Value >= seasonStart
                           && t.Date.Value <= seasonEnd
                           && t.Actual.HasValue && t.Actual.Value > 0
-                          && (
-                                (t.Target.HasValue && t.Target.Value > 0) ||
-                                t.Date.Value.Year == 2026
-                             )
+                          // ❌ OLD (SEASON WORK, batch 2+3 — now ApplyNoTargetRule below):
+                          // && ((t.Target.HasValue && t.Target.Value > 0) ||
+                          //     t.Date.Value.Year == 2026)
                     select new LeagueRaceDto
                     {
                         RunnerId = r.EFKey,
@@ -129,6 +137,11 @@
                         HasTarget = t.Target.HasValue && t.Target.Value > 0
                     }
                 ).ToListAsync(ct);
+
+                // NO-TARGET RULE (SEASON WORK, batch 2+3): same filter as the public
+                // league tables, so the two screens can never disagree.
+                IReadOnlyList<SeasonInfo> seasons = await _seasons.ListAsync(ct);
+                races = LeagueTableService.ApplyNoTargetRule(races, seasons);
 
                 // -----------------------------------------------------------------
                 // STEP 2: Group races by runner.

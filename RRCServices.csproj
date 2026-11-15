@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Calculator\Calculator.csproj" />
+    <ProjectReference Include="..\RRCConfig\RRCConfig.csproj" />
     <ProjectReference Include="..\RRCDataModel\RRCDataModel.csproj" />
   </ItemGroup>
 

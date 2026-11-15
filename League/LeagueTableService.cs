@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using RRCDataModel.Data;
 using RRCServices.League.DTO;
 using RRCServices.League.Trophy;
+using RRCServices.Season;
 
 namespace RRCServices.League
 {
@@ -76,12 +77,16 @@ namespace RRCServices.League
     //   Miss target time           →   6 points
     //   Improvement capped at 120 seconds per race for tie-breaking purposes
     //
-    // 2026 NO-TARGET RULE:
+    // NO-TARGET RULE (SEASON WORK, batch 2+3 — was the "2026 NO-TARGET RULE"):
     //   If a runner has a valid actual time but no predicted time, and the race
-    //   is in 2026, they are awarded a flat 6 points with 0 time difference.
+    //   falls in a season whose AllowNoTarget flag is on (config.Season), they
+    //   are awarded a flat 6 points with 0 time difference. Was hard-coded to
+    //   race year 2026; now 2026 and 2027 are on, 2025 is off.
     //   This applies to both JR and DB trophies.
     //   Races without a target are included in the top-N selection but rank at
     //   the bottom (ImprovementSeconds returns 0 for them in LeagueRaceDto).
+    //   Which no-target races may score is decided ONCE, in ApplyNoTargetRule,
+    //   used by this service and by RunnerLeagueSummaryService.
     //
     // ASSIGNMENT RULE (see TrophyAssignmentResolver):
     //   JR is only open to runners who have run a race longer than 10k. Each runner
@@ -102,9 +107,12 @@ namespace RRCServices.League
         // LeagueTableService logic from TrophyCalculator logic.
         // IMPORTANT: all points/trophy-time arithmetic lives in TrophyCalculator.
         //            Do not add scoring logic here — this service only orchestrates.
-        //            Exception: the 2026 no-target rule is intercepted in ScoreRunner
+        //            Exception: the no-target rule is intercepted in ScoreRunner
         //            before the calculator is called, as there is no target to calculate with.
         private readonly ITrophyCalculator _calculator;
+
+        // SEASON WORK (batch 2+3): seasons decide which no-target races may score.
+        private readonly ISeasonService _seasons;
 
         // The set of distance codes that qualify a race for the DB Trophy.
         // Stored as a HashSet for O(1) lookups. OrdinalIgnoreCase means "10KM"
@@ -140,10 +148,32 @@ namespace RRCServices.League
         // -------------------------------------------------------------------------
         public LeagueTableService(
             IDbContextFactory<RRCContext> factory,
-            ITrophyCalculator calculator)
+            ITrophyCalculator calculator,
+            ISeasonService seasons)
         {
             _factory = factory;
             _calculator = calculator;
+            _seasons = seasons;
+        }
+
+        // =========================================================================
+        // ApplyNoTargetRule — SEASON WORK (batch 2+3)
+        // =========================================================================
+        // Keeps every race that has a target, and keeps a NO-TARGET race only if
+        // its date falls in a season with AllowNoTarget on (SeasonRules rule 6).
+        // Replaces "t.Date.Value.Year == 2026" in the EF queries of this service
+        // and RunnerLeagueSummaryService, so both apply the identical rule.
+        //
+        // Internal static (like ScoreRunner) so it can be unit tested directly.
+        // =========================================================================
+        internal static List<LeagueRaceDto> ApplyNoTargetRule(
+            List<LeagueRaceDto> races,
+            IReadOnlyList<SeasonInfo> seasons)
+        {
+            return races
+                .Where(r => r.HasTarget
+                         || SeasonRules.AllowsNoTarget(seasons, DateOnly.FromDateTime(r.RaceDate)))
+                .ToList();
         }
 
 
@@ -172,8 +202,9 @@ namespace RRCServices.League
             //   - The EventRunnerTime record is active
             //   - The race has a valid actual time AND either:
             //       a) a valid predicted time (normal path), OR
-            //       b) the race is in 2026 and has no predicted time
-            //          (2026 no-target rule — awarded flat 6 points in ScoreRunner)
+            //       b) no predicted time, in a season with AllowNoTarget on
+            //          (no-target rule — flat 6 points in ScoreRunner; filtered
+            //          by ApplyNoTargetRule after the query)
             //   - The race date falls within the season window (inclusive)
             //
             // We join three tables here: EventRunnerTimes (the results), runners
@@ -194,14 +225,11 @@ namespace RRCServices.League
                       && t.Date.Value <= seasonEnd
                       && t.Actual.HasValue && t.Actual.Value > 0   // must have a real finish time
 
-                      // 2026 NO-TARGET RULE: allow rows where target is missing/zero
-                      // provided the race falls in 2026. All other years still require
-                      // a valid target time as before.
-                      // ❌ OLD: && t.Target.HasValue && t.Target.Value > 0
-                      && (
-                            (t.Target.HasValue && t.Target.Value > 0) ||
-                            t.Date.Value.Year == 2026
-                         )
+                      // NO-TARGET RULE (SEASON WORK, batch 2+3): rows with no target are
+                      // now loaded too, and filtered just below by ApplyNoTargetRule
+                      // using the season's AllowNoTarget flag.
+                      // ❌ OLD: && ((t.Target.HasValue && t.Target.Value > 0) ||
+                      //            t.Date.Value.Year == 2026)
 
                 select new LeagueRaceDto
                 {
@@ -212,7 +240,7 @@ namespace RRCServices.League
                     DistanceCode = e.DistanceCode,
                     RaceTitle = e.Title,
 
-                    // 2026 NO-TARGET RULE: target defaults to 0 when not set.
+                    // NO-TARGET RULE: target defaults to 0 when not set.
                     // HasTarget drives the scoring decision in ScoreRunner —
                     // TargetSeconds is never used directly for a no-target race.
                     // ❌ OLD: TargetSeconds = t.Target.Value,
@@ -220,11 +248,16 @@ namespace RRCServices.League
 
                     ActualSeconds = t.Actual!.Value,
 
-                    // 2026 NO-TARGET RULE: true = normal scoring path via TrophyCalculator.
-                    //                      false = flat 6 points awarded in ScoreRunner.
+                    // NO-TARGET RULE: true = normal scoring path via TrophyCalculator.
+                    //                 false = flat 6 points awarded in ScoreRunner.
                     HasTarget = t.Target.HasValue && t.Target.Value > 0
                 }
             ).ToListAsync(ct);
+
+            // NO-TARGET RULE (SEASON WORK, batch 2+3): drop no-target races
+            // unless their season allows them (replaces Year == 2026).
+            IReadOnlyList<SeasonInfo> seasons = await _seasons.ListAsync(ct);
+            races = ApplyNoTargetRule(races, seasons);
 
             // -----------------------------------------------------------------
             // STEP 2: Group the flat list of races by runner.
@@ -486,10 +519,15 @@ namespace RRCServices.League
 
             foreach (LeagueRaceDto r in top)
             {
-                // 2026 NO-TARGET RULE: if the race has no predicted time and is in
-                // 2026, award a flat 6 points with no time difference contribution.
+                // NO-TARGET RULE: if the race has no predicted time, award a flat
+                // 6 points with no time difference contribution.
                 // TrophyCalculator is bypassed entirely — there is no target to score against.
-                if (!r.HasTarget && r.RaceDate.Year == 2026)
+                //
+                // SEASON WORK (batch 2+3): the "&& r.RaceDate.Year == 2026" check is
+                // gone. Callers pass only no-target races their season allows
+                // (ApplyNoTargetRule), so every no-target race reaching here scores 6.
+                // ❌ OLD: if (!r.HasTarget && r.RaceDate.Year == 2026)
+                if (!r.HasTarget)
                 {
                     points += 6;
                     continue;
