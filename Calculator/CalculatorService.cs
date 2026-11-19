@@ -71,6 +71,58 @@ namespace RRCServices.Calculator
         }
 
 
+        // ---------------------------------------------------------------------
+        // PredictFromRecentRacesCapped  (7% CAP — added 19 Nov 2026)
+        // ---------------------------------------------------------------------
+        // Same as PredictFromRecentRaces, but each race is first read through
+        // PredictionCapRule: a race more than 7% slower than its target is read
+        // as target + 7%. The races used and the formula are unchanged.
+        // Only the prediction sees the capped time; RecentRaceDto.Actual is
+        // never altered, and nothing is saved.
+        // ---------------------------------------------------------------------
+        public static double? PredictFromRecentRacesCapped(
+            IReadOnlyCollection<RecentRaceDto> recentRaces,
+            double newDistanceMeters)
+        {
+            if (recentRaces == null || recentRaces.Count == 0)
+                return null;
+
+            var inputs = new List<RecentRaceDto>();
+
+            foreach (var race in recentRaces)
+            {
+                inputs.Add(new RecentRaceDto
+                {
+                    RunnerId = race.RunnerId,
+                    Distance = race.Distance,
+                    Target = race.Target,
+                    Actual = PredictionCapRule.TimeForPrediction(race.Actual, race.Target)
+                });
+            }
+
+            return PredictFromRecentRaces(inputs, newDistanceMeters);
+        }
+
+
+        // ---------------------------------------------------------------------
+        // PredictFromRecentRacesForSeason  (7% CAP on/off per season)
+        // ---------------------------------------------------------------------
+        // The one call the prediction paths make. The season's
+        // ApplyPredictionCap switch (admin Season Dates page) decides whether
+        // the 7% cap is used.
+        // ---------------------------------------------------------------------
+        public static double? PredictFromRecentRacesForSeason(
+            IReadOnlyCollection<RecentRaceDto> recentRaces,
+            double newDistanceMeters,
+            bool applyPredictionCap)
+        {
+            if (applyPredictionCap)
+                return PredictFromRecentRacesCapped(recentRaces, newDistanceMeters);
+
+            return PredictFromRecentRaces(recentRaces, newDistanceMeters);
+        }
+
+
         // ---------------------------------------------
         // Prediction logic
         // ---------------------------------------------
@@ -192,6 +244,7 @@ namespace RRCServices.Calculator
                 {
                     t.RunnerId,
                     ActualSeconds = t.Actual!.Value,
+                    TargetSeconds = t.Target,   // 7% CAP: needed by PredictFromRecentRacesCapped
 
                     DistanceMeters = db.distance
                         .Where(d => d.Code == t.Event.DistanceCode)
@@ -204,6 +257,7 @@ namespace RRCServices.Calculator
                 {
                     RunnerId = x.RunnerId,
                     Actual = x.ActualSeconds,
+                    Target = x.TargetSeconds,   // 7% CAP
                     Distance = x.DistanceMeters
                 })
                 .ToListAsync(ct);
@@ -325,7 +379,8 @@ namespace RRCServices.Calculator
                 .Select(t => new RecentRaceDto
                 {
                     Distance = t.DistanceMeters!.Value,  // metres
-                    Actual = t.ActualSeconds!.Value    // seconds
+                    Actual = t.ActualSeconds!.Value,   // seconds
+                    Target = t.TargetTime              // seconds (0 = no target) — 7% CAP
                 })
 
                 .ToList();
@@ -367,5 +422,6 @@ namespace RRCServices.Calculator
         public int RunnerId { get; set; }
         public int Actual { get; set; }      // seconds
         public double Distance { get; set; } // meters
+        public int? Target { get; set; }     // seconds; null or 0 = no target (7% CAP)
     }
 }

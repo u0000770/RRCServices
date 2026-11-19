@@ -11,6 +11,11 @@ public sealed record SeasonInfo(
 {
     public DateOnly StartDate => Window.Start;
     public DateOnly EndDate => Window.End;
+
+    // 7% PREDICTION CAP (19 Nov 2026): predictions for races in this season
+    // use the cap. A plain property (not a constructor argument) so existing
+    // code that creates a SeasonInfo is unchanged; it defaults to off.
+    public bool ApplyPredictionCap { get; init; }
 }
 
 // =============================================================================
@@ -25,6 +30,7 @@ public sealed class SeasonEdit
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
     public bool AllowNoTarget { get; set; } = true;
+    public bool ApplyPredictionCap { get; set; }   // 7% CAP: on/off per season
 
     public static SeasonEdit From(SeasonInfo s) => new()
     {
@@ -32,7 +38,8 @@ public sealed class SeasonEdit
         Name = s.Name,
         StartDate = s.StartDate,
         EndDate = s.EndDate,
-        AllowNoTarget = s.AllowNoTarget
+        AllowNoTarget = s.AllowNoTarget,
+        ApplyPredictionCap = s.ApplyPredictionCap
     };
 }
 

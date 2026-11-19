@@ -16,6 +16,10 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>RRCServices.Tests</_Parameter1>
     </AssemblyAttribute>
+    <!-- 7% CAP replay tool (read only) uses LeagueTableService.ScoreRunner -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>PredictionReplay</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

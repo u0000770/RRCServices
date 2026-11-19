@@ -373,9 +373,10 @@ namespace RRCServices.Calculator
                     if (recent.Count == 0)
                         continue;
 
-                    var predicted = CalculatorService.PredictFromRecentRaces(
+                    var predicted = CalculatorService.PredictFromRecentRacesForSeason(   // 7% CAP: on/off per season
                         recentRaces: recent,
-                        newDistanceMeters: race.DistanceMeters.Value);
+                        newDistanceMeters: race.DistanceMeters.Value,
+                        applyPredictionCap: season.ApplyPredictionCap);
 
                     int? predictedSeconds = predicted is null ? null : (int)Math.Round(predicted.Value);
 

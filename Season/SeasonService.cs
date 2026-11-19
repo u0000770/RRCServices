@@ -86,6 +86,7 @@ public sealed class SeasonService : ISeasonService
         row.StartDate = edit.StartDate;
         row.EndDate = edit.EndDate;
         row.AllowNoTarget = edit.AllowNoTarget;
+        row.ApplyPredictionCap = edit.ApplyPredictionCap;   // 7% CAP: on/off per season
         row.UpdatedUtc = nowUtc;
 
         await db.SaveChangesAsync(ct);
@@ -94,5 +95,8 @@ public sealed class SeasonService : ISeasonService
     }
 
     private static SeasonInfo ToInfo(SeasonRecord r)
-        => new(r.SeasonId, r.Name, new SeasonWindow(r.StartDate, r.EndDate), r.AllowNoTarget);
+        => new(r.SeasonId, r.Name, new SeasonWindow(r.StartDate, r.EndDate), r.AllowNoTarget)
+        {
+            ApplyPredictionCap = r.ApplyPredictionCap   // 7% CAP: on/off per season
+        };
 }
